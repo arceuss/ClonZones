@@ -1,0 +1,427 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net6.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>disable</Nullable>
+		<RootNamespace>ClonZones</RootNamespace>
+		<LangVersion>default</LangVersion>
+		<IsPackable>false</IsPackable>
+		<AssemblyVersion>1.0.0.0</AssemblyVersion>
+		<FileVersion>1.0.0.0</FileVersion>
+		<NeutralLanguage>en-US</NeutralLanguage>
+		<AssemblyName>ClonZones</AssemblyName>
+		<LangVersion>latest</LangVersion>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Reference Include="Il2CppacilAddOns">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppacilAddOns.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppBlake3">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppBlake3.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppCHNet.Core">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppCHNet.Core.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppCHNet.Server">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppCHNet.Server.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppCloneHero">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppCloneHero.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppCysharp.Net.Http.YetAnotherHttpHandler">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppCysharp.Net.Http.YetAnotherHttpHandler.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppGrpc.Core.Api">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppGrpc.Core.Api.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppGrpc.Net.Client">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppGrpc.Net.Client.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppGrpc.Net.Common">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppGrpc.Net.Common.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMagicOnion.Abstractions">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMagicOnion.Abstractions.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMagicOnion.Client">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMagicOnion.Client.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMagicOnion.Serialization.MessagePack">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMagicOnion.Serialization.MessagePack.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMagicOnion.Shared">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMagicOnion.Shared.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMagicOnion.Unity">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMagicOnion.Unity.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMessagePack.Annotations">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMessagePack.Annotations.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMessagePack">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMessagePack.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMicrosoft.Bcl.TimeProvider">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMicrosoft.Bcl.TimeProvider.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMicrosoft.Extensions.Logging.Abstractions">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMicrosoft.Extensions.Logging.Abstractions.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMicrosoft.NET.StringTools">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMicrosoft.NET.StringTools.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMono.Nat">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMono.Nat.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMono.Security">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMono.Security.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppMonoIO">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppMonoIO.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2Cppmscorlib">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2Cppmscorlib.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppNCalc">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppNCalc.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2Cppnetstandard">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2Cppnetstandard.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppNewtonsoft.Json">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppNewtonsoft.Json.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppRewired_Core">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppRewired_Core.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppRewired_Windows">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppRewired_Windows.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppRewired_Windows_Functions">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppRewired_Windows_Functions.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppRtMidi.Runtime">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppRtMidi.Runtime.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSocketIOUnityAssembly">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSocketIOUnityAssembly.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppStrikeCore">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppStrikeCore.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Collections.Immutable">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Collections.Immutable.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Configuration">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Configuration.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Core">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Core.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Data">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Data.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Diagnostics.DiagnosticSource">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Diagnostics.DiagnosticSource.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Drawing">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Drawing.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.IO.Pipelines">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.IO.Pipelines.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Net.Http">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Net.Http.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Numerics">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Numerics.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Reactive">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Reactive.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Runtime.CompilerServices.Unsafe">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Runtime.CompilerServices.Unsafe.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Runtime.Serialization">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Runtime.Serialization.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Text.Encodings.Web">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Text.Encodings.Web.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Text.Json">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Text.Json.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Threading.Channels">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Threading.Channels.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Xml">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Xml.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppSystem.Xml.Linq">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppSystem.Xml.Linq.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppUniTask">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppUniTask.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppYamlDotNet">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppYamlDotNet.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppZstdSharp">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppZstdSharp.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppZString">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2CppZString.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2Cpp__Generated">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Il2Cpp__Generated.dll</HintPath>
+		</Reference>
+		<Reference Include="Unity.Burst">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Unity.Burst.dll</HintPath>
+		</Reference>
+		<Reference Include="Unity.Burst.Unsafe">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Unity.Burst.Unsafe.dll</HintPath>
+		</Reference>
+		<Reference Include="Unity.MemoryProfiler">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Unity.MemoryProfiler.dll</HintPath>
+		</Reference>
+		<Reference Include="Unity.TextMeshPro">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Unity.TextMeshPro.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.AccessibilityModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.AccessibilityModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.AIModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.AIModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.AndroidJNIModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.AndroidJNIModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.AnimationModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.AnimationModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.ARModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.ARModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.AssetBundleModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.AssetBundleModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.AudioModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.AudioModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.ClothModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.ClothModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.ContentLoadModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.ContentLoadModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.CoreModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.CoreModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.CrashReportingModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.CrashReportingModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.DirectorModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.DirectorModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.DSPGraphModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.DSPGraphModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.GameCenterModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.GameCenterModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.GIModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.GIModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.GridModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.GridModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.HotReloadModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.HotReloadModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.ImageConversionModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.ImageConversionModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.IMGUIModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.IMGUIModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.InputLegacyModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.InputLegacyModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.InputModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.InputModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.JSONSerializeModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.JSONSerializeModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.LocalizationModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.LocalizationModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.ParticleSystemModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.ParticleSystemModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.PerformanceReportingModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.PerformanceReportingModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.Physics2DModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.Physics2DModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.PhysicsModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.PhysicsModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.ProfilerModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.ProfilerModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.PropertiesModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.PropertiesModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.RuntimeInitializeOnLoadManagerInitializerModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.RuntimeInitializeOnLoadManagerInitializerModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.ScreenCaptureModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.ScreenCaptureModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.SharedInternalsModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.SharedInternalsModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.SpriteMaskModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.SpriteMaskModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.SpriteShapeModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.SpriteShapeModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.StreamingModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.StreamingModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.SubstanceModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.SubstanceModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.SubsystemsModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.SubsystemsModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.TerrainModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.TerrainModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.TerrainPhysicsModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.TerrainPhysicsModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.TextCoreFontEngineModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.TextCoreFontEngineModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.TextCoreTextEngineModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.TextCoreTextEngineModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.TextRenderingModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.TextRenderingModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.TilemapModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.TilemapModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.TLSModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.TLSModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UI">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UI.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UIElementsModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UIElementsModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UIModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UIModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UmbraModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UmbraModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityAnalyticsCommonModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityAnalyticsCommonModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityAnalyticsModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityAnalyticsModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityConnectModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityConnectModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityCurlModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityCurlModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityTestProtocolModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityTestProtocolModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityWebRequestAssetBundleModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityWebRequestAssetBundleModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityWebRequestAudioModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityWebRequestModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityWebRequestModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityWebRequestTextureModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.UnityWebRequestWWWModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.UnityWebRequestWWWModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.VehiclesModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.VehiclesModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.VFXModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.VFXModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.VideoModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.VideoModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.VRModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.VRModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.WindModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.WindModule.dll</HintPath>
+		</Reference>
+		<Reference Include="UnityEngine.XRModule">
+			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\UnityEngine.XRModule.dll</HintPath>
+		</Reference>
+		<Reference Include="MelonLoader">
+			<HintPath>$(GamePath)/MelonLoader\net6\MelonLoader.dll</HintPath>
+		</Reference>
+		<Reference Include="0Harmony">
+			<HintPath>$(GamePath)/MelonLoader\net6\0Harmony.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppInterop.Runtime">
+			<HintPath>$(GamePath)/MelonLoader\net6\Il2CppInterop.Runtime.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppInterop.Common">
+			<HintPath>$(GamePath)/MelonLoader\net6\Il2CppInterop.Common.dll</HintPath>
+		</Reference>
+
+	</ItemGroup>
+
+	<PropertyGroup>
+		<AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Include="Core.cs" />
+		<Compile Include="ClonZonesProfiler.cs" />
+		<Compile Include="NoteHeadSpriteBank.cs" />
+		<Compile Include="GuitarNoteHeadPatch.cs" />
+		<Compile Include="FretSpriteBank.cs" />
+		<Compile Include="GuitarFretPatch.cs" />
+		<Compile Include="FlameSpriteBank.cs" />
+		<Compile Include="GuitarFlamePatch.cs" />
+		<Compile Include="SustainFxBank.cs" />
+		<Compile Include="SustainFxPatch.cs" />
+		<Content Include="Directory.Build.props" />
+	</ItemGroup>
+	
+	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
+		<Exec Command="COPY &quot;$(TargetPath)&quot; &quot;$(GamePath)/Mods&quot;" />
+	</Target>
+</Project>
