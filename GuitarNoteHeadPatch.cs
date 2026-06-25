@@ -496,7 +496,7 @@ namespace ClonZones
                 // Missing note data: enqueue a vanilla fallback placeholder so the
                 // same-frame Setup/Apply bridge stays aligned.
             }
-            else if (IsOpenMask(noteMask))
+            else if (IsOpenRenderCall(noteMask, lanePos, colorPos))
             {
                 frames = ResolveOpenFrames(noteFlags, isSPActive);
                 ourSprite = ResolveSprite(frames);
@@ -776,6 +776,24 @@ namespace ClonZones
         }
 
         private static bool IsOpenMask(ushort noteMask) => (noteMask & 0x0001) != 0;
+
+        private static bool IsOpenRenderCall(ushort noteMask, int lanePos, int colorPos)
+        {
+            if (!IsOpenMask(noteMask))
+                return false;
+
+            // Pure open notes are always open. Open chords carry both the open bit
+            // and closed lane bits; only CH's dedicated centered open render call
+            // should receive open sprites. Colored chord members still arrive with
+            // a normal 1..5 lane/color and must stay colored.
+            if ((noteMask & 0x003E) == 0)
+                return true;
+
+            if (lanePos == 7)
+                return true;
+
+            return colorPos == 0 && (lanePos <= 0 || lanePos > 5);
+        }
 
 
         private static bool TryResolveClosedLane(ushort noteMask, int lanePos, int colorPos, out int lane)
