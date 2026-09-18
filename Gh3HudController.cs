@@ -291,6 +291,7 @@ namespace ClonZones
                 _mesh.Upload();
             }
             Gh3HudDiagnostics.Snapshot(_snap, _mesh, _sched.Count, _bridge, _log);
+            Gh3HudDiagnostics.RendererInventory(_log);
             if (!_drawn)
             {
                 _drawn = true;
