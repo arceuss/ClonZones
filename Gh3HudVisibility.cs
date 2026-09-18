@@ -101,7 +101,8 @@ namespace ClonZones
         /// <summary>
         /// The component properties only expose the dynamic leaves. The housings around them
         /// (multiplier background/connector/smoke, FC ring, ghost meter ring, streak_meter
-        /// backing, SPBar frame and dark arrow, Score_BG/overlay, star backgrounds) are plain
+        /// backing, SPBar frame and dark arrow, Score_BG/overlay, star backgrounds, song
+        /// progress) are plain
         /// child sprites, so walk the subtrees anchored on known leaves. Discovery only: the
         /// walks allocate.
         /// </summary>
@@ -118,7 +119,13 @@ namespace ClonZones
             if (score != null)
             {
                 var digits = score.scoreFont?.Sprites;
-                if (digits != null && digits.Length > 0 && digits[0] != null) Subtree(digits[0].transform.parent);
+                if (digits != null && digits.Length > 0 && digits[0] != null)
+                {
+                    Transform scoreHousing = digits[0].transform.parent;
+                    Subtree(scoreHousing);
+                    // Sibling group on the HUD camera: song progress bar, end cap, overlay and time text.
+                    Subtree(scoreHousing?.parent?.Find("Song Progress"));
+                }
                 var stars = score.starProgress;
                 if (stars?.progressBar != null) Subtree(stars.progressBar.parent);
             }
