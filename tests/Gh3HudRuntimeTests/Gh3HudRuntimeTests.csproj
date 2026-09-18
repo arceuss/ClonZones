@@ -20,6 +20,7 @@
     <Compile Include="$(HudSourceRoot)/Gh3HudController.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudScripts.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudSpMeter.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudFcLabel.cs" Condition="Exists('$(HudSourceRoot)/Gh3HudFcLabel.cs')" />
     <Compile Include="../Gh3HudTests/UnityStubs.cs" />
     <Compile Include="HostStubs.cs" />
     <Compile Include="Program.cs" />

@@ -275,6 +275,7 @@ namespace ClonZones
                 if (_scene.Tick(_sched.NowMs)) _changed = true;
                 RunEntrance();
                 RunNativeUpdater();
+                RunFcLabel();
                 RunTransitions();
                 if (_sched.Count > 0) _changed = true;
                 _sched.Tick(0);
@@ -326,6 +327,7 @@ namespace ClonZones
             _gMultiplierStarPower = false;
             _gStarPower = -1f; _gStarPowerPrev = 0f; _gHealth = -2f;
             _entranceStarted = _entranceFinished = false;
+            _fcState = FcState.Waiting; _fcGhosted = false; _fcText = null; _fcGlow = null;
             _synchronizeState = true;
             _prev = _snap;
         }

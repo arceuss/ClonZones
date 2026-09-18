@@ -44,6 +44,16 @@ namespace ClonZones
         public static readonly Vector2 SpReadyPos = AlertBasePos - new Vector2(0f, 20f);
         public static readonly Vector2 LightningDims = new(800f, 100f);
 
+        // FC label (GH3 Deluxe dx_fc_hud.q, adapted): text_a6 "PFC"/"FC" centred above the amp, rising 50
+        // authored units over 0.2 s like the Deluxe label; Deluxe's own (340,440) left/top anchor overlaps
+        // this layout's amp, whose top is at 650*0.7 = 455.
+        public static readonly Vector2 FcLabelPos = new(300f, 398f);
+        public static readonly Vector2 FcLabelHiddenPos = new(300f, 448f);
+        public static readonly Color32 FcLabelRgba = new(240, 191, 116, 255);
+        public static readonly Color32 FcLabelShadowRgba = new(204, 153, 102, 191);
+        public static readonly Color32 FcGlowRgba = new(246, 188, 102, 255);
+        public static readonly Color32[] FcGlowPulse = { new(250, 192, 110, 255), new(252, 196, 115, 255), new(255, 200, 120, 255), new(255, 204, 125, 255) };
+
         internal enum Kind { Container, Sprite }
 
         /// <summary>One `elements[]` entry. Fields mirror the script keys; absent keys use the builder defaults.</summary>

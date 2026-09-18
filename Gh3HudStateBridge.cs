@@ -14,6 +14,7 @@ namespace ClonZones
         public bool Paused, SongPlaying, SongOver;
         public int Score;          // engine total (base + solo + bonus parts)
         public int Streak;         // engine combo, 0 on miss
+        public int MissedNotes;    // engine 0xB0: incremented per missed note, untouched by overstrums
         public int Multiplier;     // effective 1..4, 2/4/6/8 while SP is active
         public float Health;       // 0..1, fail at <= 0
         public float StarPower;    // 0..1
@@ -55,6 +56,7 @@ namespace ClonZones
             s.SongOver = _manager.isSongOver;
             s.Score = engine.prop_Int32_2;            // Method_Public_get_Int32_2: base + solo + bonus
             s.Streak = engine.field_Public_Int32_1;
+            s.MissedNotes = engine.field_Public_Int32_10;
             s.Multiplier = engine.field_Protected_Int32_0;
             s.Health = engine.field_Protected_Single_0;
             s.StarPower = engine.prop_Single_0;       // Method_Public_get_Single_0: raw / max
@@ -66,11 +68,11 @@ namespace ClonZones
             return true;
         }
 
-        /// <summary>Diagnostics only: the raw star power accumulator, maximum and ready threshold.</summary>
+        /// <summary>Diagnostics only: raw star power fields and the missed-note counter.</summary>
         public string RawFields()
         {
             var e = _engine;
-            return e == null ? "no engine" : $"spRaw={e.field_Public_Int64_0} spMax={e.field_Public_Int64_2} spReadyAt={e.field_Public_Int64_3}";
+            return e == null ? "no engine" : $"spRaw={e.field_Public_Int64_0} spMax={e.field_Public_Int64_2} spReadyAt={e.field_Public_Int64_3} missed={e.field_Public_Int32_10}";
         }
 
         public bool EngineChanged => _engine != null && _player != null && _player.engine?.Pointer != _engine.Pointer;

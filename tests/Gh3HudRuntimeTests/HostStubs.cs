@@ -63,7 +63,7 @@ namespace Il2Cpp
     }
     public class ObjectPublicAbstractDoBoDoInBoObDoInSiBoUnique : NativeObject
     {
-        public int prop_Int32_2, field_Public_Int32_1, field_Protected_Int32_0 = 1;
+        public int prop_Int32_2, field_Public_Int32_1, field_Protected_Int32_0 = 1, field_Public_Int32_10;
         public float field_Protected_Single_0 = 1f, prop_Single_0;
         public bool field_Public_Boolean_0;
         public long field_Public_Int64_0, field_Public_Int64_2 = 2000, field_Public_Int64_3 = 1000;
