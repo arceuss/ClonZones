@@ -157,3 +157,35 @@ cue assets); pause was exercised by the user only; practice seek not exercised i
 - Sustain SP classification (pre-existing `Gh3SustainPatch`) keys on the profile's SP tint;
   under an all-white colour profile every sustain reads as SP. Not a HUD change; needs a
   sustain-root → note-flag association to fix.
+
+## Stability follow-up (commit after 03dac12)
+
+Root causes fixed, from the prepared audit and confirmed in source:
+
+- **Animation clock gated on the script queue** (`_sched.Tick` only when `Count > 0`): async
+  morphs launched by an already-finished script (counter exit, digit flip return, entrance's
+  final return, flash fade) froze. The clock now advances every unpaused HUD frame
+  (`AdvanceClock`), poses are sampled before scripts resume, and `Morph` samples the running
+  morph at the new timestamp before snapshotting starts.
+- **Cosmetic invalidation manufactured note events**: `UpdateNixie` cleared the streak cache,
+  so the SP flash could re-fire a 50/100 milestone and a flip. The multiplier art is now
+  re-evaluated on a streak change or invalidation (native gate kept); counter, lamps,
+  milestones and digits need a real streak change.
+- **Epoch reset left old timers**: restart/seek/engine swap now cancels scripts (disposing
+  iterators so `finally` cleanup runs), rebuilds the element tree, and hydrates the current
+  CH state without synthesising hits or announcements.
+- **Ready-notification lock**: readiness is rechecked after waiting behind a streak banner and
+  the flag is released in `finally` (early exit, kill, reset).
+- **CH leaf suppression**: cached `forceRenderingOff` re-asserted every frame (paused too),
+  dynamic font/multiplier arrays checked directly, rediscovery on right-click and a 1 s
+  fallback; extra ComboColor/SPBar/HealthContainer/StarProgress instances swept once.
+- **Projection-only camera changes** rebuild the mesh (field compare of the matrix).
+
+Tests: `tests/Gh3HudRuntimeTests` (real controller/scripts/scheduler/scene with a
+synthetic host): 0/16 on the audited base export, 18/18 on the candidate (two added:
+Nixie switches only after the flash's `UpdateNixie`; a milestone re-fires on a new
+streak). Pure suite 94/94. Release build clean.
+
+In-game (this build): bot entrance settles at the authored positions; song end teardown
+clean. Human acceptance (miss exit, restarts, right-click reset, notification contention)
+was run by the user; see the session outcome.
