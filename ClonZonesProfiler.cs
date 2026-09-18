@@ -44,7 +44,11 @@ namespace ClonZones
         SustainPostfix = 30,
         SustainPatchNeck = 31,
         SustainPatchAnimator = 32,
-        Count = 33
+        Gh3HighwayUpdate = 33,
+        Gh3NoteProjection = 34,
+        Gh3SustainUpdate = 35,
+        Gh3HudUpdate = 36,
+        Count = 37
     }
 
     internal static class ClonZonesProfiler
@@ -83,12 +87,18 @@ namespace ClonZones
             "sustainPrefix",
             "sustainPostfix",
             "sustainPatchNeck",
-            "sustainPatchAnimator"
+            "sustainPatchAnimator",
+            "gh3HighwayUpdate",
+            "gh3NoteProjection",
+            "gh3SustainUpdate",
+            "gh3HudUpdate"
         };
 
         private static readonly long[] TotalTicks = new long[(int)ProfileScope.Count];
         private static readonly long[] MaxTicks = new long[(int)ProfileScope.Count];
         private static readonly int[] Calls = new int[(int)ProfileScope.Count];
+        private static readonly long[] AllocationStart = new long[(int)ProfileScope.Count];
+        private static readonly long[] AllocatedBytes = new long[(int)ProfileScope.Count];
         private static readonly StringBuilder ReportBuilder = new(2048);
 
         private static MelonLogger.Instance _log;
@@ -140,7 +150,10 @@ namespace ClonZones
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long BeginScope(ProfileScope scope)
         {
-            return Enabled ? Stopwatch.GetTimestamp() : 0;
+            if (!Enabled) return 0;
+            if (scope >= ProfileScope.Gh3HighwayUpdate)
+                AllocationStart[(int)scope] = GC.GetAllocatedBytesForCurrentThread();
+            return Stopwatch.GetTimestamp();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -151,6 +164,8 @@ namespace ClonZones
 
             int index = (int)scope;
             long elapsed = Stopwatch.GetTimestamp() - startTicks;
+            if (scope >= ProfileScope.Gh3HighwayUpdate)
+                AllocatedBytes[index] += GC.GetAllocatedBytesForCurrentThread() - AllocationStart[index];
             Calls[index]++;
             TotalTicks[index] += elapsed;
             if (elapsed > MaxTicks[index])
@@ -293,6 +308,11 @@ namespace ClonZones
                 ReportBuilder.Append(avgMs.ToString("0.####", CultureInfo.InvariantCulture));
                 ReportBuilder.Append(" maxMs=");
                 ReportBuilder.Append(maxMs.ToString("0.####", CultureInfo.InvariantCulture));
+                if (i >= (int)ProfileScope.Gh3HighwayUpdate)
+                {
+                    ReportBuilder.Append(" bytes/call=");
+                    ReportBuilder.Append((calls > 0 ? (double)AllocatedBytes[i] / calls : 0.0).ToString("0.##", CultureInfo.InvariantCulture));
+                }
             }
 
             int restTotal = _fretRestSettledCalls + _fretRestActiveCalls;
@@ -379,6 +399,7 @@ namespace ClonZones
             Array.Clear(TotalTicks, 0, TotalTicks.Length);
             Array.Clear(MaxTicks, 0, MaxTicks.Length);
             Array.Clear(Calls, 0, Calls.Length);
+            Array.Clear(AllocatedBytes, 0, AllocatedBytes.Length);
             _frames = 0;
             _totalFrameMs = 0f;
             _maxFrameMs = 0f;

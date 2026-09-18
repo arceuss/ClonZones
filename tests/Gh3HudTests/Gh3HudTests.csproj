@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net6.0</TargetFramework>
+		<Nullable>disable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+		<RootNamespace>ClonZones.Tests</RootNamespace>
+	</PropertyGroup>
+	<!-- Pure HUD sources under test; Unity value types come from UnityStubs.cs. -->
+	<ItemGroup>
+		<Compile Include="..\..\Gh3HudTypes.cs" />
+		<Compile Include="..\..\Gh3HudFont.cs" />
+		<Compile Include="..\..\Gh3HudLayout.cs" />
+		<Compile Include="..\..\Gh3HudRules.cs" />
+		<Compile Include="..\..\Gh3HudElement.cs" />
+		<Compile Include="..\..\Gh3HudScheduler.cs" />
+		<Compile Include="..\..\Gh3HudScene.cs" />
+		<Compile Include="UnityStubs.cs" />
+		<Compile Include="Program.cs" />
+	</ItemGroup>
+</Project>

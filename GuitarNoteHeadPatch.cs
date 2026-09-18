@@ -129,6 +129,7 @@ namespace ClonZones
         private struct PendingSprite
         {
             public Sprite Sprite;
+            public double HitTime;
         }
 
         private struct ApplyStateRestore
@@ -273,6 +274,7 @@ namespace ClonZones
         private static readonly List<SetupNativeHook> _nativeSetupHooks = new();
         private static int _noteMaskOffset = -1;
         private static int _noteFlagsOffset = -1;
+        private static int _noteTimeOffset = -1;
         private static int _noteFlagsSize = 4;
         private static bool _noteReadsValidated;
         private static bool _noteNativeReadsBroken;
@@ -284,6 +286,7 @@ namespace ClonZones
                 var noteType = typeof(ObjectPublicObInObDoSiDoUIInBoInUnique);
                 _noteMaskOffset = GetNativeFieldOffset(noteType, "NativeFieldInfoPtr_field_Public_UInt16_0");
                 _noteFlagsOffset = GetNativeFieldOffset(noteType, "NativeFieldInfoPtr_field_Public_EnumNPublicSealedvaNoChDiExChHoStTaSoUnique_0");
+                _noteTimeOffset = GetNativeFieldOffset(noteType, "NativeFieldInfoPtr_field_Public_Double_0");
 
                 var flagsType = noteType.GetProperty("field_Public_EnumNPublicSealedvaNoChDiExChHoStTaSoUnique_0", BindingFlags.Instance | BindingFlags.Public)?.PropertyType
                                 ?? noteType.GetField("field_Public_EnumNPublicSealedvaNoChDiExChHoStTaSoUnique_0", BindingFlags.Instance | BindingFlags.Public)?.FieldType;
@@ -292,7 +295,7 @@ namespace ClonZones
                     : underlying == typeof(short) || underlying == typeof(ushort) ? 2
                     : 4;
 
-                return _noteMaskOffset > 0 && _noteFlagsOffset > 0;
+                return _noteMaskOffset > 0 && _noteFlagsOffset > 0 && _noteTimeOffset > 0;
             }
             catch (Exception ex)
             {
@@ -372,6 +375,7 @@ namespace ClonZones
                 bool hasNote = note != IntPtr.Zero;
                 ushort noteMask = 0;
                 int noteFlags = 0;
+                double hitTime = double.NaN;
                 if (hasNote)
                 {
                     if (_noteNativeReadsBroken)
@@ -379,11 +383,13 @@ namespace ClonZones
                         var wrapper = new ObjectPublicObInObDoSiDoUIInBoInUnique(note);
                         noteMask = wrapper.field_Public_UInt16_0;
                         noteFlags = (int)wrapper.field_Public_EnumNPublicSealedvaNoChDiExChHoStTaSoUnique_0;
+                        hitTime = wrapper.field_Public_Double_0;
                     }
                     else
                     {
                         noteMask = unchecked((ushort)Marshal.ReadInt16(note, _noteMaskOffset));
                         noteFlags = ReadNoteFlags(note);
+                        hitTime = BitConverter.Int64BitsToDouble(Marshal.ReadInt64(note, _noteTimeOffset));
 
                         if (!_noteReadsValidated)
                         {
@@ -393,11 +399,13 @@ namespace ClonZones
                             var wrapper = new ObjectPublicObInObDoSiDoUIInBoInUnique(note);
                             ushort managedMask = wrapper.field_Public_UInt16_0;
                             int managedFlags = (int)wrapper.field_Public_EnumNPublicSealedvaNoChDiExChHoStTaSoUnique_0;
-                            if (managedMask != noteMask || managedFlags != noteFlags)
+                            double managedTime = wrapper.field_Public_Double_0;
+                            if (managedMask != noteMask || managedFlags != noteFlags || managedTime != hitTime)
                             {
                                 _noteNativeReadsBroken = true;
                                 noteMask = managedMask;
                                 noteFlags = managedFlags;
+                                hitTime = managedTime;
                                 MelonLogger.Warning("[ClonZones] Native note field reads disagree with managed wrapper; using wrapper reads.");
                             }
                             _noteReadsValidated = true;
@@ -405,7 +413,7 @@ namespace ClonZones
                     }
                 }
 
-                ProcessSetupState(lanePos, colorPos, hasNote, noteMask, noteFlags, noteIndex, isSPActive != 0);
+                ProcessSetupState(lanePos, colorPos, hasNote, noteMask, noteFlags, noteIndex, isSPActive != 0, hitTime);
             }
             catch
             {
@@ -415,6 +423,7 @@ namespace ClonZones
         private static void ApplyNewStateNativeDetour(ApplyNativeHook hook, IntPtr instance, IntPtr state, IntPtr materialPropertyBlock, IntPtr methodInfo)
         {
             long profileStart = ClonZonesProfiler.BeginScope(ProfileScope.NoteApply);
+            double hitTime = double.NaN;
             try
             {
                 if (_mode == RenderPatchMode.Gameplay && _frameCacheReady && TryDequeueBridge(out PendingSprite pending))
@@ -425,6 +434,7 @@ namespace ClonZones
                         IntPtr spritePtr = sprite.Pointer;
                         if (spritePtr != IntPtr.Zero)
                         {
+                            hitTime = pending.HitTime;
                             Marshal.WriteIntPtr(state, 0x00, spritePtr);
                             Marshal.WriteInt32(state, 0x20, unchecked((int)0xFFFFFFFF));
                             // ClonZones note sprites are fully authored in the Head slot.
@@ -454,6 +464,7 @@ namespace ClonZones
             }
 
             hook.Hook.Trampoline(instance, state, materialPropertyBlock, methodInfo);
+            if (double.IsFinite(hitTime)) Gh3NoteProjection.Capture(instance, hitTime);
         }
 
 
@@ -474,11 +485,12 @@ namespace ClonZones
             bool hasNote = !ReferenceEquals(note, null);
             ushort noteMask = hasNote ? note.field_Public_UInt16_0 : (ushort)0;
             int noteFlags = hasNote ? (int)note.field_Public_EnumNPublicSealedvaNoChDiExChHoStTaSoUnique_0 : 0;
-            ProcessSetupState(__1, __2, hasNote, noteMask, noteFlags, __4, __5);
+            ProcessSetupState(__1, __2, hasNote, noteMask, noteFlags, __4, __5,
+                hasNote ? note.field_Public_Double_0 : double.NaN);
         }
 
         // Shared by the Harmony postfix fallback and the native SetupState detour.
-        private static void ProcessSetupState(int lanePos, int colorPos, bool hasNote, ushort noteMask, int noteFlags, int noteIndex, bool isSPActive)
+        private static void ProcessSetupState(int lanePos, int colorPos, bool hasNote, ushort noteMask, int noteFlags, int noteIndex, bool isSPActive, double hitTime)
         {
             long profileStart = ClonZonesProfiler.BeginScope(ProfileScope.NoteSetup);
 
@@ -512,7 +524,7 @@ namespace ClonZones
             }
 
 
-            EnqueueBridge(ourSprite);
+            EnqueueBridge(ourSprite, hitTime);
             ClonZonesProfiler.EndScope(ProfileScope.NoteSetup, profileStart);
         }
 
@@ -598,7 +610,7 @@ namespace ClonZones
             _pendingFrame = -1;
         }
 
-        private static void EnqueueBridge(Sprite sprite)
+        private static void EnqueueBridge(Sprite sprite, double hitTime)
         {
             int frame = _currentUnityFrame;
             if (_pendingFrame != frame)
@@ -628,6 +640,7 @@ namespace ClonZones
                 tail -= MaxPendingSprites;
 
             _pendingSprites[tail].Sprite = sprite;
+            _pendingSprites[tail].HitTime = hitTime;
             _pendingCount++;
         }
 

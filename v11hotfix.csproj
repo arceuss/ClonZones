@@ -418,10 +418,44 @@
 		<Compile Include="GuitarFlamePatch.cs" />
 		<Compile Include="SustainFxBank.cs" />
 		<Compile Include="SustainFxPatch.cs" />
+		<Compile Include="Gh3HighwayDiagnostics.cs" />
+		<Compile Include="HighwaySpriteBank.cs" />
+		<Compile Include="Gh3HighwayLayout.cs" />
+		<Compile Include="Gh3HighwayBridge.cs" />
+		<Compile Include="Gh3HighwayMesh.cs" />
+		<Compile Include="Gh3HighwayRenderer.cs" />
+		<Compile Include="Gh3BeatTimeline.cs" />
+		<Compile Include="Gh3SustainBank.cs" />
+		<Compile Include="Gh3SustainPatch.cs" />
+		<Compile Include="Gh3WhammyHistory.cs" />
+		<Compile Include="Gh3NoteProjection.cs" />
+		<Compile Include="Gh3HighwayBacking.cs" />
+		<Compile Include="Gh3HudTypes.cs" />
+		<Compile Include="Gh3HudAssets.cs" />
+		<Compile Include="Gh3HudFont.cs" />
+		<Compile Include="Gh3HudLayout.cs" />
+		<Compile Include="Gh3HudRules.cs" />
+		<Compile Include="Gh3HudElement.cs" />
+		<Compile Include="Gh3HudScheduler.cs" />
+		<Compile Include="Gh3HudScene.cs" />
+		<Compile Include="Gh3HudMesh.cs" />
+		<Compile Include="Gh3HudStateBridge.cs" />
+		<Compile Include="Gh3HudVisibility.cs" />
+		<Compile Include="Gh3HudController.cs" />
+		<Compile Include="Gh3HudScripts.cs" />
+		<Compile Include="Gh3HudDiagnostics.cs" />
+		<Compile Include="Gh3HudSpMeter.cs" />
 		<Content Include="Directory.Build.props" />
 	</ItemGroup>
-	
+
+	<!-- Reference assemblies always come from GamePath; the built DLL goes to
+	     DeployDir, which defaults to the live Mods folder. Pass
+	     -p:DeployDir=<staging> to build without touching the installed mod. -->
+	<PropertyGroup>
+		<DeployDir Condition="'$(DeployDir)' == ''">$(GamePath)/Mods</DeployDir>
+	</PropertyGroup>
+
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
-		<Exec Command="COPY &quot;$(TargetPath)&quot; &quot;$(GamePath)/Mods&quot;" />
+		<Exec Command="COPY &quot;$(TargetPath)&quot; &quot;$(DeployDir)&quot;" />
 	</Target>
 </Project>

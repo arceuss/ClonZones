@@ -16,6 +16,15 @@ namespace ClonZones
     internal static class NoteHeadSpriteBank
     {
         private static readonly Dictionary<string, Sprite[]> _sprites = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<IntPtr, HeadMetrics> _metrics = new();
+
+        internal readonly struct HeadMetrics
+        {
+            public readonly float ScaleX, ScaleY;
+            public HeadMetrics(float scaleX, float scaleY) { ScaleX = scaleX; ScaleY = scaleY; }
+        }
+
+        public static bool TryGetMetrics(IntPtr sprite, out HeadMetrics metrics) => _metrics.TryGetValue(sprite, out metrics);
 
         public static bool IsReady { get; private set; }
 
@@ -281,7 +290,17 @@ namespace ClonZones
 
         private static Sprite MakeSprite(Texture2D tex, Rect rect, float ppu, string name)
         {
-            var s = Sprite.Create(tex, rect, new Vector2(0.5f, 0.18f), ppu, 0, SpriteMeshType.FullRect);
+            bool open = name.StartsWith("open/", StringComparison.Ordinal) || name.Contains("_open_", StringComparison.Ordinal);
+            bool star = name.Contains("/star_", StringComparison.Ordinal)
+                || name.Contains("/tap_starpower", StringComparison.Ordinal)
+                || name.StartsWith("active_phrase", StringComparison.Ordinal);
+            // NotClon renderer.cpp gem seating uses justifications 0.68/0.35,
+            // lowering the art by 7.5% of its height relative to retail GH3.
+            float pivot = star ? (1f - .35f) * .5f : (1f - .68f) * .5f;
+            var s = Sprite.Create(tex, rect, new Vector2(0.5f, pivot), ppu, 0, SpriteMeshType.FullRect);
+            float multiplier = open || star ? 1.3f : 1f;
+            _metrics[s.Pointer] = new HeadMetrics(ppu * (open ? 512f : 128f) / rect.width * multiplier,
+                ppu * 64f / rect.height * multiplier);
             s.name = $"gh3zones_{name}";
             s.hideFlags = HideFlags.DontUnloadUnusedAsset;
             return s;

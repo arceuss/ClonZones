@@ -58,6 +58,14 @@ namespace ClonZones
             SustainFxPatch.Install(HarmonyInstance, LoggerInstance);
             ClonZonesProfiler.EndScope(ProfileScope.InstallSustain, profileStart);
 
+            Gh3HighwayDiagnostics.Install(HarmonyInstance, LoggerInstance);
+            HighwaySpriteBank.LoadAll(assetRoot, LoggerInstance);
+            Gh3HighwayRenderer.Install(HarmonyInstance, LoggerInstance);
+            Gh3SustainBank.LoadAll(assetRoot, LoggerInstance);
+            Gh3SustainPatch.Install(HarmonyInstance, LoggerInstance);
+            Gh3HudAssets.LoadAll(assetRoot, LoggerInstance);
+            Gh3HudController.Install(HarmonyInstance, LoggerInstance);
+
             ClonZonesProfiler.EndScope(ProfileScope.CoreInitialize, coreProfile);
 
             LoggerInstance.Msg("[ClonZones] Initialized.");
@@ -74,6 +82,19 @@ namespace ClonZones
             ClonZonesProfiler.EndScope(ProfileScope.CoreUpdate, profileStart);
         }
 
+        public override void OnLateUpdate()
+        {
+            long profileStart = ClonZonesProfiler.BeginScope(ProfileScope.Gh3HighwayUpdate);
+            Gh3HighwayRenderer.Tick();
+            ClonZonesProfiler.EndScope(ProfileScope.Gh3HighwayUpdate, profileStart);
+            profileStart = ClonZonesProfiler.BeginScope(ProfileScope.Gh3SustainUpdate);
+            Gh3SustainPatch.Tick();
+            ClonZonesProfiler.EndScope(ProfileScope.Gh3SustainUpdate, profileStart);
+            profileStart = ClonZonesProfiler.BeginScope(ProfileScope.Gh3HudUpdate);
+            Gh3HudController.Tick();
+            ClonZonesProfiler.EndScope(ProfileScope.Gh3HudUpdate, profileStart);
+        }
+
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
             long profileStart = ClonZonesProfiler.BeginScope(ProfileScope.CoreScene);
@@ -85,6 +106,9 @@ namespace ClonZones
             GuitarFlamePatch.ClearRuntimeState();
             SustainFxPatch.SetActive(false);
             SustainFxPatch.ClearRuntimeState();
+            Gh3HighwayRenderer.Clear();
+            Gh3SustainPatch.Clear();
+            Gh3HudController.Clear();
             ClonZonesProfiler.EndScope(ProfileScope.CoreScene, profileStart);
         }
 
@@ -97,6 +121,9 @@ namespace ClonZones
             GuitarFlamePatch.ClearRuntimeState();
             SustainFxPatch.SetActive(false);
             SustainFxPatch.ClearRuntimeState();
+            Gh3HighwayRenderer.Clear();
+            Gh3SustainPatch.Clear();
+            Gh3HudController.Clear();
             ClonZonesProfiler.EndScope(ProfileScope.CoreScene, profileStart);
         }
 
@@ -107,6 +134,9 @@ namespace ClonZones
             GuitarNoteHeadPatch.SetMode(isGameplay ? RenderPatchMode.Gameplay : RenderPatchMode.Inactive);
             GuitarFlamePatch.SetActive(isGameplay);
             SustainFxPatch.SetActive(isGameplay);
+            Gh3HighwayRenderer.SetActive(isGameplay);
+            Gh3SustainPatch.SetActive(isGameplay);
+            Gh3HudController.SetActive(isGameplay);
             LoggerInstance.Msg($"[ClonZones] Scene initialized: '{sceneName}' (buildIndex={buildIndex}) → mode={(isGameplay ? "Gameplay" : "Inactive")}");
             ClonZonesProfiler.EndScope(ProfileScope.CoreScene, profileStart);
         }
@@ -119,6 +149,9 @@ namespace ClonZones
             GuitarFlamePatch.ClearRuntimeState();
             SustainFxPatch.SetActive(false);
             SustainFxPatch.ClearRuntimeState();
+            Gh3HighwayRenderer.Clear();
+            Gh3SustainPatch.Clear();
+            Gh3HudController.Clear();
         }
 
         public override void OnDeinitializeMelon()
@@ -129,6 +162,9 @@ namespace ClonZones
             GuitarFlamePatch.ClearRuntimeState();
             SustainFxPatch.SetActive(false);
             SustainFxPatch.ClearRuntimeState();
+            Gh3HighwayRenderer.Clear();
+            Gh3SustainPatch.Clear();
+            Gh3HudController.Clear();
         }
 
         // ─────────────────────────────────────────────────────────────────────
