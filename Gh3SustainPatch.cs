@@ -129,16 +129,21 @@ namespace ClonZones
             _trackMatrix = _track.localToWorldMatrix;
             _whammy.Refresh();
             for (int i = 0; i < _bodyMeshes.Length; i++) { _bodyMeshes[i]?.Begin(); _glowMeshes[i]?.Begin(); }
-            Color32 sp = _notes.field_Protected_Color32_2;
-            Append(_closed, _notes.field_Private_Int32_3, false, sp);
-            Append(_open, _notes.field_Private_Int32_4, true, sp);
+            // CH tints an SP sustain with one of three profile colours: sustain_sp_phrase
+            // (_0), sustain_sp_phrase_active (_1) or sustain_sp_active (_2). Only the last
+            // was checked before, so a whammied phrase kept its lane body.
+            Color32 spPhrase = _notes.field_Protected_Color32_0, spPhraseActive = _notes.field_Protected_Color32_1, sp = _notes.field_Protected_Color32_2;
+            Append(_closed, _notes.field_Private_Int32_3, false, spPhrase, spPhraseActive, sp);
+            Append(_open, _notes.field_Private_Int32_4, true, spPhrase, spPhraseActive, sp);
             // Hide only after every mesh upload succeeds. No native sprite, material,
             // sliced geometry, shader uniform or pool-enabled state is rewritten.
             for (int i = 0; i < _bodyMeshes.Length; i++) { _bodyMeshes[i]?.Upload(); _glowMeshes[i]?.Upload(); }
             Suppress(_closed); Suppress(_open);
         }
 
-        private void Append(Slot[] slots, int count, bool open, Color32 sp)
+        private static bool SameRgb(Color32 a, Color32 b) => a.r == b.r && a.g == b.g && a.b == b.b;
+
+        private void Append(Slot[] slots, int count, bool open, Color32 spPhrase, Color32 spPhraseActive, Color32 sp)
         {
             for (int i = 0; i < slots.Length; i++)
             {
@@ -150,7 +155,7 @@ namespace ClonZones
                 Color tint = slot.Body.color;
                 Color32 tint32 = tint;
                 bool dead = !held && (sprite.Pointer == _deadSprite || (open && tint.r == .5f && tint.g == .5f && tint.b == .5f));
-                bool starPower = tint32.r == sp.r && tint32.g == sp.g && tint32.b == sp.b;
+                bool starPower = SameRgb(tint32, sp) || SameRgb(tint32, spPhrase) || SameRgb(tint32, spPhraseActive);
                 Vector3 root = slot.Root.localPosition;
                 int lane = 0; float closest = float.MaxValue;
                 for (int l = 0; l < 5; l++) { float d = MathF.Abs(root.x - _lanes[l]); if (d < closest) { closest = d; lane = l; } }
@@ -188,7 +193,7 @@ namespace ClonZones
                 if (_spriteSamples < 6 && sprite.Pointer != _sampledSprite)
                 {
                     _spriteSamples++; _sampledSprite = sprite.Pointer;
-                    _log.Msg($"[ClonZones] Sustain sprite sample: '{sprite.name}' tint=({tint32.r},{tint32.g},{tint32.b}) sp=({sp.r},{sp.g},{sp.b}) open={open} held={held} dead={dead} classifiedSp={starPower}.");
+                    _log.Msg($"[ClonZones] Sustain sprite sample: '{sprite.name}' tint=({tint32.r},{tint32.g},{tint32.b}) sp=({sp.r},{sp.g},{sp.b}) phrase=({spPhrase.r},{spPhrase.g},{spPhrase.b}) open={open} held={held} dead={dead} classifiedSp={starPower}.");
                 }
             }
         }
