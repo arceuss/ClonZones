@@ -108,8 +108,8 @@ namespace ClonZones
         private bool _disposed;
         private bool _drawn;
         private bool _changed = true;
-        private int _frame;
-        private Rect _lastViewport;
+        private int _resetDiscoveryFrames;
+        private bool _synchronizeState = true;
         private double _clockRemainder;
         private double _lastSongTime = double.NegativeInfinity;
         private int _epoch;
@@ -133,6 +133,7 @@ namespace ClonZones
         private int _gNoteStreak = -1, _gScoreMultiplier = -1, _gScore = -1;
         private float _gStarPower = -1f, _gStarPowerPrev, _gHealth = -2f;
         private bool _counterVisible;
+        private bool _gMultiplierStarPower;
 
         // Script globals.
         private bool _starPowerReadyOn;     // star_power_ready_on_p1
@@ -252,10 +253,11 @@ namespace ClonZones
         private void Update()
         {
             if (_disposed) return;
+            bool engineChanged = _bridge.EngineChanged;
             if (!_bridge.Read(ref _snap)) return;
 
             // A backwards clock or a score drop means CH reset/seeked the song: nothing pending survives that.
-            if (_snap.SongTime < _lastSongTime - 1e-6 || _snap.Score < _prev.Score)
+            if (engineChanged || _snap.SongTime < _lastSongTime - 1e-6 || _snap.Score < _prev.Score)
             {
                 ResetPresentation();
                 _changed = true;
@@ -267,15 +269,19 @@ namespace ClonZones
                 double ms = Time.unscaledDeltaTime * 1000.0 + _clockRemainder;
                 int whole = (int)ms;
                 _clockRemainder = ms - whole;
+                // A script can exit with an async morph still running. The clock is not a queue clock.
+                _sched.AdvanceClock(whole);
+                // Finish last frame's movement before a resumed script snapshots the next morph.
+                if (_scene.Tick(_sched.NowMs)) _changed = true;
                 RunEntrance();
                 RunNativeUpdater();
                 RunTransitions();
-                if (_sched.Count > 0) { _changed = true; _sched.Tick(whole); }
+                if (_sched.Count > 0) _changed = true;
+                _sched.Tick(0);
                 if (_scene.Tick(_sched.NowMs)) _changed = true;
             }
 
-            _mesh.RefreshViewport();
-            if (_mesh.Viewport != _lastViewport) { _lastViewport = _mesh.Viewport; _changed = true; }
+            if (_mesh.RefreshViewport()) _changed = true;
             // Everything is retained in the element tree; rebuild the mesh only when something moved.
             if (_changed || !_drawn)
             {
@@ -290,9 +296,14 @@ namespace ClonZones
                 _drawn = true;
                 _visibility.Hide();   // first complete frame is out: now the CH leaves may go
             }
-            else if ((++_frame & 63) == 0)
+            else
             {
-                _visibility.Reassert();
+                // CH's right-click reset can replace leaves without changing the owning component.
+                // Re-discover on the click and release plus the following frame, including while paused.
+                if (UnityEngine.Input.GetMouseButtonDown(1) || UnityEngine.Input.GetMouseButtonUp(1))
+                    _resetDiscoveryFrames = 2;
+                _visibility.Reassert(_resetDiscoveryFrames > 0);
+                if (_resetDiscoveryFrames > 0) _resetDiscoveryFrames--;
             }
             _prev = _snap;
         }
@@ -301,41 +312,21 @@ namespace ClonZones
         {
             _epoch++;
             _sched.Reset();
-            Gh3HudElement streak = _scene.Find(StreakContainerId);
-            if (streak != null) _scene.Destroy(streak);
-            for (int i = 1; i <= 7; i += 2) { var l = _scene.Find($"HUD_lightning_0{i}_1"); if (l != null) _scene.Destroy(l); }
-            var glow = _scene.Find("star_power_ready_glow_1"); if (glow != null) _scene.Destroy(glow);
-            _spReadyText.SetAlpha(0f);
-            _starPowerReadyOn = false;
-            _flashRedGoing = false;
-            _bgRed.SetRgba(new Color32(255, 255, 255, 255));
-            _rockGlow.SetAlpha(0f);
-            _scoreFlash.SetAlpha(0f); _scoreFlash.SetScale(1f);
-            // Counter housing back offscreen with the digits at rest.
-            _noteContainer.SetPos(Gh3HudLayout.CounterPos + Gh3HudLayout.OffscreenNoteStreakBarOff);
-            for (int i = 0; i < 4; i++) { _digits[i].SetPos(_digitInitialPos[i]); _digits[i].SetAlpha(1f); }
+            // A new clock epoch needs new element timers too. Partial property resets leave
+            // positive old start times behind a clock that has just gone back to zero.
+            _scene.Clear();
+            BuildScene();
+            _clockRemainder = 0;
             _counterVisible = false;
+            _starPowerReadyOn = false;
             _starPowerUsed = false;
-            RockMeterStarPowerReset();
+            _flashRedGoing = false;
             _gNoteStreak = _gScoreMultiplier = _gScore = -1;
+            _gMultiplierStarPower = false;
             _gStarPower = -1f; _gStarPowerPrev = 0f; _gHealth = -2f;
             _entranceStarted = _entranceFinished = false;
-        }
-
-        /// <summary>Instant equivalent of rock_meter_star_power_off for an epoch reset (no animation).</summary>
-        private void RockMeterStarPowerReset()
-        {
-            for (int i = 0; i < 6; i++)
-            {
-                _scene.SetTexture(_tubeFill[i], "HUD_rock_tube_glow_fill");
-                _scene.SetTexture(_tubeFull[i], "HUD_rock_tube_glow_full");
-                if (_tubeMorph[i])
-                {
-                    _tube[i].SetPos(_tubeInitial[i]); _tubeFill[i].SetPos(_fillInitial[i]); _tubeFull[i].SetPos(_tubeInitial[i]);
-                }
-                _tube[i].SetScale(1f); _tubeFill[i].SetAlpha(_fillOldAlpha[i]); _tubeFull[i].SetAlpha(_fullOldAlpha[i]);
-            }
-            _rockContainer.SetScale(1f); _rockContainer.SetRot(0f);
+            _synchronizeState = true;
+            _prev = _snap;
         }
 
         // ── entrance: guitar_intro.q hud_start_time -400 ms, hud_move_time 200 ms, then the bounce ──
@@ -404,17 +395,38 @@ namespace ClonZones
                 _scoreText.SetScale(new Vector2(sx, sy));
             }
 
-            // Streak driver (0x42FFFC): change-gated on the note streak; UpdateNixie invalidates with -1.
+            // Streak driver (0x42FFFC): the multiplier art is re-evaluated only on a streak change
+            // or after an UpdateNixie invalidation (end of the activation flash, SP end), exactly
+            // like the native driver. Hit-only work (counter, lamps, milestones, digits) needs a
+            // real streak change: an invalidation must not manufacture another note event.
             int streak = _snap.Streak;
-            if (streak != _gNoteStreak)
+            int mult = _snap.Multiplier;
+            bool spUsed = _snap.StarPowerActive;
+            bool streakChanged = streak != _gNoteStreak;
+            if (streakChanged || _gScoreMultiplier < 0)
+            {
+                if (mult != _gScoreMultiplier || spUsed != _gMultiplierStarPower)
+                {
+                    _changed = true;
+                    _gScoreMultiplier = mult;
+                    _gMultiplierStarPower = spUsed;
+                    InstallLampPalette(mult, spUsed);
+                }
+                SelectNixie(mult, spUsed);
+            }
+            if (streakChanged)
             {
                 _changed = true;
                 _gNoteStreak = streak;
-                int mult = _snap.Multiplier;       // CH's effective multiplier (GH3: sub_422BC0 from streak, x2 under SP)
-                bool spUsed = _snap.StarPowerActive;
-
-                // Counter show/hide/flip (sub_422BC0 tail).
-                if (streak < Gh3HudRules.CounterShowStreak)
+                // Counter show/hide/flip (sub_422BC0 tail). A seek/reattach hydrates
+                // the present state; it is not another hit or another announcement.
+                if (_synchronizeState)
+                {
+                    _counterVisible = streak >= Gh3HudRules.CounterShowStreak;
+                    _noteContainer.SetPos(Gh3HudLayout.CounterPos +
+                        (_counterVisible ? Vector2.zero : Gh3HudLayout.OffscreenNoteStreakBarOff));
+                }
+                else if (streak < Gh3HudRules.CounterShowStreak)
                 {
                     if (_counterVisible)
                     {
@@ -434,16 +446,10 @@ namespace ClonZones
                     _sched.Spawn("hud_flip_note_streak_num", HudFlipNoteStreakNum(Gh3HudRules.FlipDial(streak)));
                 }
 
-                if (mult != _gScoreMultiplier)
-                {
-                    _gScoreMultiplier = mult;
-                    InstallLampPalette(mult, spUsed);
-                }
-                SelectNixie(mult, spUsed);
                 UpdateLamps(streak);
 
                 // Milestones (0x422E8A): 50, then every 100.
-                if (Gh3HudRules.IsMilestone(streak))
+                if (!_synchronizeState && Gh3HudRules.IsMilestone(streak))
                     _sched.Spawn("hud_show_note_streak_combo", HudShowNoteStreakCombo(streak));
 
                 if (_counterVisible) UpdateDigits(streak);
@@ -547,6 +553,28 @@ namespace ClonZones
 
         private void RunTransitions()
         {
+            if (_synchronizeState)
+            {
+                _synchronizeState = false;
+                _starPowerUsed = _snap.StarPowerActive;
+                if (_snap.StarPowerReady || _snap.StarPowerActive)
+                {
+                    for (int i = 0; i < 6; i++)
+                    {
+                        _scene.SetTexture(_tubeFill[i], "HUD_rock_tube_glow_fill_b");
+                        _scene.SetTexture(_tubeFull[i], "HUD_rock_tube_glow_full_b");
+                        if (_tubeMorph[i])
+                        {
+                            _tube[i].SetPos(_tubeFinal[i]);
+                            _tubeFill[i].SetPos(_fillFinal[i]);
+                            _tubeFull[i].SetPos(_tubeFinal[i]);
+                        }
+                    }
+                    if (_snap.StarPowerReady)
+                        _sched.Spawn("pulsate_all_star_power_bulbs", PulsateAllStarPowerBulbs(), PulseScriptId);
+                }
+                return;
+            }
             if (_snap.StarPowerReady != _prev.StarPowerReady || _snap.StarPowerActive != _prev.StarPowerActive) _changed = true;
             if (_snap.StarPowerReady && !_prev.StarPowerReady)
                 _sched.Spawn("show_star_power_ready", ShowStarPowerReady());
@@ -565,8 +593,8 @@ namespace ClonZones
             }
         }
 
-        /// <summary>Native UpdateNixie: invalidate the streak driver's caches so the next pass refreshes.</summary>
-        private void UpdateNixie() { _gNoteStreak = -1; _gScoreMultiplier = -1; }
+        /// <summary>Request a multiplier repaint without synthesizing another streak change.</summary>
+        private void UpdateNixie() { _gScoreMultiplier = -1; }
 
         public void Dispose()
         {

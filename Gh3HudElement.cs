@@ -124,6 +124,7 @@ namespace ClonZones
         /// </summary>
         public void Morph(in Gh3Morph m, long nowMs)
         {
+            Tick(nowMs);
             // Deliberate deviation from the recovered shared setup (0x4FE125): every channel's
             // start is re-snapshotted here, so a channel the morph does not name holds its
             // current value instead of re-lerping from a stale start. The asm of the shared

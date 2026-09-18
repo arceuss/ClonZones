@@ -124,32 +124,38 @@ namespace ClonZones
             // Star_Power_Ready_SFX would play here; no cue asset is shipped.
             _sched.Spawn("rock_meter_star_power_on", RockMeterStarPowerOn());
             while (_scene.Exists(StreakContainerId)) yield return Gh3Wait.GameFrames(1);
-            if (_starPowerReadyOn) yield break;
+            // Readiness may have been consumed while the streak banner occupied the slot.
+            if (_starPowerReadyOn || _starPowerUsed || !_snap.StarPowerReady) yield break;
             _starPowerReadyOn = true;
-            if (_starPowerUsed) yield break;   // early return leaves the flag set, exactly like the script
-            Gh3HudElement id = _spReadyText;
-            Vector2 originalPos = Gh3HudLayout.SpReadyPos;
-            const float baseScale = 1.2f, scaleBigMult = 1.5f;
-            id.Morph(Gh3Morph.Of().WithPos(originalPos).WithScale(4f).WithRgba(new Color32(190, 225, 255, 250)).WithAlpha(0f).WithRot(3f), _sched.NowMs);
-            _sched.Spawn("hud_lightning_alert", HudLightningAlert(id));
-            id.Morph(Gh3Morph.Of(0.3f, Gh3Motion.EaseIn).WithPos(originalPos).WithScale(baseScale).WithAlpha(1f).WithRot(-3f), _sched.NowMs);
-            yield return Gh3Wait.Morph(id);
-            id.Morph(Gh3Morph.Of(0.3f, Gh3Motion.EaseOut).WithPos(originalPos).WithScale(baseScale * scaleBigMult).WithRot(4f), _sched.NowMs);
-            yield return Gh3Wait.Morph(id);
-            id.Morph(Gh3Morph.Of(0.3f, Gh3Motion.EaseIn).WithPos(originalPos).WithScale(baseScale).WithRot(-5f).WithRgba(new Color32(145, 215, 235, 250)), _sched.NowMs);
-            yield return Gh3Wait.Morph(id);
-            float rotation = 10f;
-            for (int i = 0; i < 12; i++)
+            try
             {
-                rotation *= -0.7f;
-                id.Morph(Gh3Morph.Of(0.08f, Gh3Motion.EaseOut).WithPos(originalPos).WithRot(rotation).WithAlpha(1f), _sched.NowMs);
+                Gh3HudElement id = _spReadyText;
+                Vector2 originalPos = Gh3HudLayout.SpReadyPos;
+                const float baseScale = 1.2f, scaleBigMult = 1.5f;
+                id.Morph(Gh3Morph.Of().WithPos(originalPos).WithScale(4f).WithRgba(new Color32(190, 225, 255, 250)).WithAlpha(0f).WithRot(3f), _sched.NowMs);
+                _sched.Spawn("hud_lightning_alert", HudLightningAlert(id));
+                id.Morph(Gh3Morph.Of(0.3f, Gh3Motion.EaseIn).WithPos(originalPos).WithScale(baseScale).WithAlpha(1f).WithRot(-3f), _sched.NowMs);
+                yield return Gh3Wait.Morph(id);
+                id.Morph(Gh3Morph.Of(0.3f, Gh3Motion.EaseOut).WithPos(originalPos).WithScale(baseScale * scaleBigMult).WithRot(4f), _sched.NowMs);
+                yield return Gh3Wait.Morph(id);
+                id.Morph(Gh3Morph.Of(0.3f, Gh3Motion.EaseIn).WithPos(originalPos).WithScale(baseScale).WithRot(-5f).WithRgba(new Color32(145, 215, 235, 250)), _sched.NowMs);
+                yield return Gh3Wait.Morph(id);
+                float rotation = 10f;
+                for (int i = 0; i < 12; i++)
+                {
+                    rotation *= -0.7f;
+                    id.Morph(Gh3Morph.Of(0.08f, Gh3Motion.EaseOut).WithPos(originalPos).WithRot(rotation).WithAlpha(1f), _sched.NowMs);
+                    yield return Gh3Wait.Morph(id);
+                }
+                id.Morph(Gh3Morph.Of(0f, Gh3Motion.EaseOut).WithPos(originalPos).WithRot(0f), _sched.NowMs);
+                yield return Gh3Wait.Morph(id);
+                id.Morph(Gh3Morph.Of(0.3f, Gh3Motion.EaseIn).WithPos(originalPos - new Vector2(0f, 230f)).WithScale(baseScale * 0.5f).WithAlpha(0f), _sched.NowMs);
                 yield return Gh3Wait.Morph(id);
             }
-            id.Morph(Gh3Morph.Of(0f, Gh3Motion.EaseOut).WithPos(originalPos).WithRot(0f), _sched.NowMs);
-            yield return Gh3Wait.Morph(id);
-            id.Morph(Gh3Morph.Of(0.3f, Gh3Motion.EaseIn).WithPos(originalPos - new Vector2(0f, 230f)).WithScale(baseScale * 0.5f).WithAlpha(0f), _sched.NowMs);
-            yield return Gh3Wait.Morph(id);
-            _starPowerReadyOn = false;
+            finally
+            {
+                _starPowerReadyOn = false;
+            }
         }
 
         // guitar_hud_2d.q:881-990.

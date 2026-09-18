@@ -85,36 +85,54 @@ namespace ClonZones
         }
 
         /// <summary>Recompute the outer transform from the camera's current pixel rect and projection. Call once per frame before Begin.</summary>
-        public void RefreshViewport()
+        public bool RefreshViewport()
         {
             Rect rect = _camera.pixelRect;
+            Matrix4x4 projection = _camera.projectionMatrix;
+            float nearClip = _camera.nearClipPlane;
+            bool orthographic = _camera.orthographic;
+            bool changed = !_projectionValid || rect != Viewport || nearClip != _lastNearClip ||
+                           orthographic != _lastOrthographic || !SameMatrix(projection, _lastProjection);
+            if (!changed) return false;
+            _projectionValid = true; _lastProjection = projection;
+            _lastNearClip = nearClip; _lastOrthographic = orthographic;
             Viewport = rect;
             float w = rect.width, h = rect.height;
             _scale = Mathf.Min(w / AuthoredWidth, h / AuthoredHeight);
             _offsetX = (w - AuthoredWidth * _scale) * 0.5f;
             _offsetY = (h - AuthoredHeight * _scale) * 0.5f;
-            _depth = _camera.nearClipPlane + 0.05f;
+            _depth = nearClip + 0.05f;
             // Sample the camera's real projection (CH may set a custom matrix; FOV math would not
             // match). At a fixed view depth the pixel->camera-space map is affine, so three
             // unprojected points define it.
-            Matrix4x4 inv = _camera.projectionMatrix.inverse;
-            bool ortho = _camera.orthographic;
-            float near = _camera.nearClipPlane;
+            Matrix4x4 inv = projection.inverse;
             Vector3 Unproject(float px, float py)
             {
                 // NDC on the near plane (GL convention: z = -1), then to view space; slide the
                 // perspective ray out to _depth, keep orthographic rays parallel.
                 Vector4 v = inv * new Vector4(px * 2f / w - 1f, py * 2f / h - 1f, -1f, 1f);
                 Vector3 view = new Vector3(v.x, v.y, v.z) / v.w;
-                if (!ortho) view *= _depth / near;
+                if (!orthographic) view *= _depth / nearClip;
                 // Camera space looks down -z; the mesh is a child of the camera transform, which looks down +z.
                 return new Vector3(view.x, view.y, -view.z);
             }
             _origin = Unproject(0f, 0f);
             _axisX = Unproject(1f, 0f) - _origin;
             _axisY = Unproject(0f, 1f) - _origin;
+            return true;
         }
 
+        // Field compare: the interop Matrix4x4 indexer and == are calls into the player.
+        private static bool SameMatrix(in Matrix4x4 a, in Matrix4x4 b) =>
+            a.m00 == b.m00 && a.m01 == b.m01 && a.m02 == b.m02 && a.m03 == b.m03 &&
+            a.m10 == b.m10 && a.m11 == b.m11 && a.m12 == b.m12 && a.m13 == b.m13 &&
+            a.m20 == b.m20 && a.m21 == b.m21 && a.m22 == b.m22 && a.m23 == b.m23 &&
+            a.m30 == b.m30 && a.m31 == b.m31 && a.m32 == b.m32 && a.m33 == b.m33;
+
+        private bool _projectionValid;
+        private Matrix4x4 _lastProjection;
+        private float _lastNearClip;
+        private bool _lastOrthographic;
         private Vector3 _origin, _axisX, _axisY;
 
         /// <summary>Authored (y-down) point to camera-local space via the sampled affine map.</summary>

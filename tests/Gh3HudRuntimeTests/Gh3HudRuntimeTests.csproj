@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <HudSourceRoot Condition="'$(HudSourceRoot)' == ''">../..</HudSourceRoot>
+  </PropertyGroup>
+  <!-- Actual controller, script, clock and scene sources. No native engine or GPU runs here. -->
+  <ItemGroup>
+    <Compile Include="$(HudSourceRoot)/Gh3HudTypes.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudFont.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudLayout.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudRules.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudElement.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudScheduler.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudScene.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudStateBridge.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudController.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudScripts.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudSpMeter.cs" />
+    <Compile Include="../Gh3HudTests/UnityStubs.cs" />
+    <Compile Include="HostStubs.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>

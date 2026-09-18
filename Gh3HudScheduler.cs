@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace ClonZones
@@ -44,12 +45,43 @@ namespace ClonZones
         public long NowMs => _nowMs;
         public int Count => _scripts.Count;
 
-        public void Reset() { _scripts.Clear(); _pending.Clear(); _nowMs = 0; }
+        public void Reset()
+        {
+            // Iterators may own notification locks. Clearing the lists skips their finally blocks.
+            for (int i = _scripts.Count - 1; i >= 0; i--) DisposeBody(_scripts[i]);
+            for (int i = _pending.Count - 1; i >= 0; i--) DisposeBody(_pending[i]);
+            _scripts.Clear(); _pending.Clear(); _nowMs = 0; _ticking = false;
+        }
+
+        public void AdvanceClock(int deltaMs)
+        {
+            if (deltaMs < 0) throw new ArgumentOutOfRangeException(nameof(deltaMs));
+            _nowMs += deltaMs;
+        }
+
+        private static void DisposeBody(Running script)
+        {
+            var body = script.Body;
+            script.Body = null;
+            body?.Dispose();
+        }
+
+        private static void RemoveDead(List<Running> scripts)
+        {
+            for (int i = scripts.Count - 1; i >= 0; i--)
+            {
+                if (!scripts[i].Dead) continue;
+                DisposeBody(scripts[i]);
+                scripts.RemoveAt(i);
+            }
+        }
 
         public bool IsRunning(string name)
         {
             for (int i = 0; i < _scripts.Count; i++)
                 if (!_scripts[i].Dead && _scripts[i].Name == name) return true;
+            for (int i = 0; i < _pending.Count; i++)
+                if (!_pending[i].Dead && _pending[i].Name == name) return true;
             return false;
         }
 
@@ -57,7 +89,7 @@ namespace ClonZones
         public void Spawn(string name, IEnumerator<Gh3Wait> body, string spawnId = null)
         {
             var script = new Running { Name = name, SpawnId = spawnId, Body = body };
-            if (!Step(script)) return;
+            if (!Step(script)) { DisposeBody(script); return; }
             if (_ticking) _pending.Add(script); else _scripts.Add(script);
         }
 
@@ -66,6 +98,7 @@ namespace ClonZones
         {
             for (int i = 0; i < _scripts.Count; i++) if (_scripts[i].Name == name) _scripts[i].Dead = true;
             for (int i = 0; i < _pending.Count; i++) if (_pending[i].Name == name) _pending[i].Dead = true;
+            if (!_ticking) { RemoveDead(_scripts); RemoveDead(_pending); }
         }
 
         /// <summary>KillSpawnedScript id = ...</summary>
@@ -73,24 +106,31 @@ namespace ClonZones
         {
             for (int i = 0; i < _scripts.Count; i++) if (_scripts[i].SpawnId == spawnId) _scripts[i].Dead = true;
             for (int i = 0; i < _pending.Count; i++) if (_pending[i].SpawnId == spawnId) _pending[i].Dead = true;
+            if (!_ticking) { RemoveDead(_scripts); RemoveDead(_pending); }
         }
 
         /// <summary>Advance the clock by one rendered frame and resume every script whose wait elapsed.</summary>
         public void Tick(int deltaMs)
         {
-            _nowMs += deltaMs;
+            AdvanceClock(deltaMs);
             _ticking = true;
-            for (int i = 0; i < _scripts.Count; i++)
+            try
             {
-                Running s = _scripts[i];
-                if (s.Dead) continue;
-                if (!Satisfied(s)) continue;
-                if (!Step(s)) s.Dead = true;
+                for (int i = 0; i < _scripts.Count; i++)
+                {
+                    Running s = _scripts[i];
+                    if (s.Dead || !Satisfied(s)) continue;
+                    if (!Step(s)) s.Dead = true;
+                }
             }
-            _ticking = false;
-            for (int i = _scripts.Count - 1; i >= 0; i--) if (_scripts[i].Dead) _scripts.RemoveAt(i);
-            for (int i = 0; i < _pending.Count; i++) if (!_pending[i].Dead) _scripts.Add(_pending[i]);
-            _pending.Clear();
+            finally
+            {
+                _ticking = false;
+                RemoveDead(_scripts);
+                RemoveDead(_pending);
+                for (int i = 0; i < _pending.Count; i++) _scripts.Add(_pending[i]);
+                _pending.Clear();
+            }
         }
 
         private bool Satisfied(Running s)

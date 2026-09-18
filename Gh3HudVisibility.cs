@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Il2Cpp;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
@@ -19,11 +20,14 @@ namespace ClonZones
         private readonly struct Owned
         {
             public readonly Renderer Renderer;
+            public readonly IntPtr Pointer;
             public readonly bool WasOff;
-            public Owned(Renderer renderer) { Renderer = renderer; WasOff = renderer.forceRenderingOff; }
+            public Owned(Renderer renderer) { Renderer = renderer; Pointer = renderer.Pointer; WasOff = renderer.forceRenderingOff; }
         }
 
         private readonly List<Owned> _owned = new(64);
+        private readonly HashSet<IntPtr> _ownedPointers = new();
+        private float _nextDiscoveryTime;
         private readonly MelonLogger.Instance _log;
         private readonly BasePlayer _player;
         private bool _hidden;
@@ -38,24 +42,32 @@ namespace ClonZones
             if (_hidden) return;
             _hidden = true;
             Collect();
+            _nextDiscoveryTime = Time.unscaledTime + 1f;
             _log.Msg($"[ClonZones] GH3 HUD hid {_owned.Count} Clone Hero HUD renderer leaves ({_extra} extra HUD component instances).");
         }
 
         /// <summary>
-        /// A HUD position reset (right click on the drag handle) re-enables or re-creates
-        /// CH's combo/score leaves. Re-walk the same owners once a second and re-hide
-        /// anything that came back; One() ignores renderers already owned.
+        /// Keep cached leaves hidden every LateUpdate, including while paused. Dynamic
+        /// glyph and multiplier arrays are checked directly; expensive hierarchy discovery
+        /// runs only on a reset request or the wall-clock fallback, not every 64 frames.
         /// </summary>
-        public void Reassert()
+        public void Reassert(bool rediscover = false)
         {
             if (!_hidden) return;
             for (int i = _owned.Count - 1; i >= 0; i--)
             {
                 Renderer r = _owned[i].Renderer;
-                if (r == null) { _owned.RemoveAt(i); continue; }
+                if (r == null) { _ownedPointers.Remove(_owned[i].Pointer); _owned.RemoveAt(i); continue; }
                 if (!r.forceRenderingOff) r.forceRenderingOff = true;
             }
-            Collect();
+            ScoreManager score = _player.gameManager?.scoreManager;
+            if (score != null) { Font(score.scoreFont); Font(score.comboFont); }
+            Combo(_player.comboCounter);
+            if (rediscover || Time.unscaledTime >= _nextDiscoveryTime)
+            {
+                _nextDiscoveryTime = Time.unscaledTime + 1f;
+                Collect();
+            }
         }
 
         private int _extra;
@@ -68,14 +80,7 @@ namespace ClonZones
                 Font(score.scoreFont);
                 Font(score.comboFont);
                 if (score.comboTransform != null) Children(score.comboTransform.gameObject);
-                StarProgress stars = score.starProgress;
-                if (stars != null)
-                {
-                    if (stars.progressBar != null) Children(stars.progressBar.gameObject);
-                    if (stars.progressBarEnd != null) Children(stars.progressBarEnd.gameObject);
-                    One(stars.starCount); One(stars.starCountBG);
-                    if (stars.starParticles != null) One(stars.starParticles.GetComponent<Renderer>());
-                }
+                Stars(score.starProgress);
             }
             Combo(_player.comboCounter);
             Sp(_player.spBar);
@@ -87,9 +92,20 @@ namespace ClonZones
             foreach (var o in Scene<ComboColor>()) { if (o.Pointer != _player.comboCounter?.Pointer) { Combo(o); _extra++; Note("ComboColor", o.transform); } }
             foreach (var o in Scene<SPBar>()) { if (o.Pointer != _player.spBar?.Pointer) { Sp(o); _extra++; Note("SPBar", o.transform); } }
             foreach (var o in Scene<HealthContainer>()) { if (o.Pointer != _player.healthContainer?.Pointer) { Health(o); _extra++; Note("HealthContainer", o.transform); } }
+            StarProgress own = _player.gameManager?.scoreManager?.starProgress;
+            foreach (var o in Scene<StarProgress>()) { if (o.Pointer != own?.Pointer) { Stars(o); _extra++; Note("StarProgress", o.transform); } }
         }
 
         private bool _sweptScene;
+
+        private void Stars(StarProgress stars)
+        {
+            if (stars == null) return;
+            if (stars.progressBar != null) Children(stars.progressBar.gameObject);
+            if (stars.progressBarEnd != null) Children(stars.progressBarEnd.gameObject);
+            One(stars.starCount); One(stars.starCountBG);
+            if (stars.starParticles != null) One(stars.starParticles.GetComponent<Renderer>());
+        }
 
         private void Combo(ComboColor combo)
         {
@@ -156,9 +172,9 @@ namespace ClonZones
         private void One(Renderer renderer)
         {
             if (renderer == null) return;
-            for (int i = 0; i < _owned.Count; i++) if (_owned[i].Renderer.Pointer == renderer.Pointer) return;
-            _owned.Add(new Owned(renderer));
-            renderer.forceRenderingOff = true;
+            if (_ownedPointers.Add(renderer.Pointer)) _owned.Add(new Owned(renderer));
+            // Owning it already does not mean CH has left the flag alone this frame.
+            if (!renderer.forceRenderingOff) renderer.forceRenderingOff = true;
         }
 
         /// <summary>Restore prior values on objects that still exist; dead wrappers are skipped, never written through.</summary>
@@ -169,7 +185,7 @@ namespace ClonZones
                 try { if (o.Renderer != null) o.Renderer.forceRenderingOff = o.WasOff; }
                 catch (System.Exception) { /* object already destroyed by the scene teardown */ }
             }
-            _owned.Clear();
+            _owned.Clear(); _ownedPointers.Clear();
             _hidden = false;
         }
     }
