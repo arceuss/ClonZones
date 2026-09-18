@@ -26,14 +26,18 @@ namespace ClonZones
         {
             if (_synchronizeState)
             {
-                // Hydrating mid-song: misses so far are known, ghosts are not.
-                _fcGhosted = false;
-                if (_snap.MissedNotes > 0) { _fcState = FcState.Lost; return; }
-                if (_snap.Streak > 0) { CreateFcLabel(FcState.Perfect); _fcText.SetPos(Gh3HudLayout.FcLabelPos); _fcText.SetAlpha(1f); }
+                // Hydrating mid-song from the counters accumulated so far.
+                _fcGhosted = _snap.GhostEvents > 0;
+                if (_snap.MissEvents > 0) { _fcState = FcState.Lost; return; }
+                if (_snap.Streak > 0)
+                {
+                    CreateFcLabel(_fcGhosted ? FcState.Full : FcState.Perfect);
+                    _fcText.SetPos(Gh3HudLayout.FcLabelPos); _fcText.SetAlpha(1f);
+                }
                 return;
             }
-            bool missed = _snap.MissedNotes > _prev.MissedNotes;
-            bool broke = _snap.Streak == 0 && _prev.Streak > 0;
+            bool missed = _snap.MissEvents > _prev.MissEvents;
+            bool broke = _snap.GhostEvents > _prev.GhostEvents;
             if (missed)
             {
                 if (_fcState == FcState.Perfect || _fcState == FcState.Full)
@@ -43,7 +47,7 @@ namespace ClonZones
             }
             if (broke)
             {
-                // Overstrum/ghost: CH breaks the combo without counting a missed note.
+                // Overstrum/ghost: a combo break whose callback carries the overstrum flag.
                 if (_fcState == FcState.Perfect) { _fcState = FcState.Full; _fcText.SetText("FC"); _changed = true; }
                 else if (_fcState == FcState.Waiting) _fcGhosted = true;
                 return;

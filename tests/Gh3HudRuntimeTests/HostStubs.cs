@@ -119,6 +119,13 @@ namespace ClonZones
         public void Reassert(bool rediscover = false) { Reassertions++; if (rediscover) Discoveries++; }
         public void Restore() {}
     }
+    internal static class Gh3HudBreakHook
+    {
+        public static int MissCount, GhostCount;
+        public static int Misses(Il2Cpp.BasePlayer p) => MissCount;
+        public static int Ghosts(Il2Cpp.BasePlayer p) => GhostCount;
+        public static void Clear() { MissCount = GhostCount = 0; }
+    }
     internal static class Gh3HudDiagnostics
     {
         public static void Configure() {}

@@ -93,6 +93,7 @@ namespace ClonZones
             _active = false;
             foreach (Gh3HudController hud in Controllers.Values) hud.Dispose();
             Controllers.Clear();
+            Gh3HudBreakHook.Clear();
         }
 
         // ── instance ────────────────────────────────────────────────────────────

@@ -33,7 +33,7 @@ internal static class Program
         public Gh3HudVisibility Visibility => Field<Gh3HudVisibility>(Hud, "_visibility");
         public Fixture(double songTime = 10)
         {
-            Time.unscaledTime = 0; Input.RightDown = Input.RightUp = false;
+            Time.unscaledTime = 0; Input.RightDown = Input.RightUp = false; Gh3HudBreakHook.Clear();
             Gm.songTime = songTime;
             typeof(Gh3HudController).GetField("_log", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, new MelonLogger.Instance());
             Hud = (Gh3HudController)typeof(Gh3HudController).GetConstructor(InstancePrivate, null,
@@ -192,22 +192,22 @@ internal static class Program
             Require(t != null && new string(t.Text, 0, t.TextLength) == "PFC", "PFC after the first hit");
             Same(t.Pos, Gh3HudLayout.FcLabelPos, "label rose into place"); Near(t.Alpha, 1, "label visible");
             Require(f.Scheduler.IsRunning("animate_dx_fc_glowburst"), "glow loop running");
-            f.Streak(0); f.Frame();                          // combo break, no missed note = ghost
+            Gh3HudBreakHook.GhostCount++; f.Streak(0); f.Frame();   // overstrum: break callback without the miss flag
             Require(new string(t.Text, 0, t.TextLength) == "FC", "ghost turns PFC into FC");
             f.Streak(5); f.Frame(); f.Run(0.2f);
-            f.Engine.field_Public_Int32_10 = 1; f.Streak(0); f.Frame(); f.Run(0.5f);
+            Gh3HudBreakHook.MissCount++; f.Streak(0); f.Frame(); f.Run(0.5f);
             Near(t.Alpha, 0, "missed note hides the label"); Same(t.Pos, Gh3HudLayout.FcLabelHiddenPos, "label back down");
             f.Streak(3); f.Frame(); f.Run(0.5f);
             Near(t.Alpha, 0, "label never returns after a miss");
         });
         Test("FC label: ghost before the first hit yields FC, mid-song hydrate respects misses", () => {
             using var f = new Fixture();
-            f.Streak(2); f.Frame(); f.Streak(0); f.Frame();  // break before any label existed
+            f.Streak(2); f.Frame(); Gh3HudBreakHook.GhostCount++; f.Streak(0); f.Frame();  // break before any label existed
             f.Streak(1); f.Frame();
             var t = f.Scene.Find("dx_fc_hud");
             Require(t != null && new string(t.Text, 0, t.TextLength) == "FC", "ghosted before creation => FC");
             using var g = new Fixture();
-            g.Engine.field_Public_Int32_10 = 2; g.Streak(40); g.Gm.songTime = 3; g.Frame(); g.Frame();
+            Gh3HudBreakHook.MissCount = 2; g.Streak(40); g.Gm.songTime = 3; g.Frame(); g.Frame();
             Require(!g.Scene.Exists("dx_fc_hud"), "hydrate with misses shows no label");
         });
         Console.WriteLine($"{_passed} runtime regression scenarios passed; {_failed} failed.");

@@ -446,6 +446,7 @@
 		<Compile Include="Gh3HudDiagnostics.cs" />
 		<Compile Include="Gh3HudSpMeter.cs" />
 		<Compile Include="Gh3HudFcLabel.cs" />
+		<Compile Include="Gh3HudBreakHook.cs" />
 		<Content Include="Directory.Build.props" />
 	</ItemGroup>
 

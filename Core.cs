@@ -64,6 +64,7 @@ namespace ClonZones
             Gh3SustainBank.LoadAll(assetRoot, LoggerInstance);
             Gh3SustainPatch.Install(HarmonyInstance, LoggerInstance);
             Gh3HudAssets.LoadAll(assetRoot, LoggerInstance);
+            Gh3HudBreakHook.Install(HarmonyInstance, LoggerInstance);
             Gh3HudController.Install(HarmonyInstance, LoggerInstance);
 
             ClonZonesProfiler.EndScope(ProfileScope.CoreInitialize, coreProfile);
