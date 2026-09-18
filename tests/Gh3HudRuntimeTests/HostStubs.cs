@@ -123,5 +123,6 @@ namespace ClonZones
     {
         public static void Configure() {}
         public static void Snapshot(Gh3HudSnapshot s, Gh3HudMesh m, int count, Gh3HudStateBridge b, MelonLoader.MelonLogger.Instance log) {}
+        public static void RendererInventory(MelonLoader.MelonLogger.Instance log) {}
     }
 }
