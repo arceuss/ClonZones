@@ -170,7 +170,14 @@ namespace ClonZones
         private static bool Later(Gh3HudElement a, Gh3HudElement b) => a.Z > b.Z || (a.Z == b.Z && a.Order > b.Order);
 
         /// <summary>Compose and emit every visible quad in draw order.</summary>
-        public void Draw(IGh3HudQuadSink sink)
+        public void Draw(IGh3HudQuadSink sink) => Draw(sink, sink);
+
+        /// <summary>
+        /// Same, but elements below the GH3 highway sides' z (Gh3HudLayout.HighwaySideZ) go to
+        /// <paramref name="underSides"/>, which the renderer draws before those sides. Draw order is
+        /// ascending z, so this only cuts the one sequence in two; a tie at the sides' z stays over.
+        /// </summary>
+        public void Draw(IGh3HudQuadSink underSides, IGh3HudQuadSink sink)
         {
             Compose();
             if (_orderDirty) SortDrawOrder();
@@ -181,8 +188,9 @@ namespace ClonZones
                 if (e.IsContainer) continue;
                 World w = _world[e.SceneIndex];
                 if (w.Alpha < 1e-4f) continue;
-                if (e.Font != null) DrawText(e, w, sink);
-                else DrawSprite(e, w, sink);
+                IGh3HudQuadSink target = e.Z < Gh3HudLayout.HighwaySideZ ? underSides : sink;
+                if (e.Font != null) DrawText(e, w, target);
+                else DrawSprite(e, w, target);
             }
         }
 

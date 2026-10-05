@@ -7,6 +7,13 @@ using UnityEngine;
 
 namespace ClonZones
 {
+    /// <summary>Unity sorting slot (layer, order, render queue) for a HUD renderer.</summary>
+    internal readonly struct Gh3HudLayerSlot
+    {
+        public readonly int SortingLayer, Order, Queue;
+        public Gh3HudLayerSlot(int sortingLayer, int order, int queue) { SortingLayer = sortingLayer; Order = order; Queue = queue; }
+    }
+
     /// <summary>
     /// One player's GH3 2D HUD: builds the career hierarchy, ports the native
     /// `UpdateScoreFastPerFrame` presentation rules onto Clone Hero's authoritative
@@ -102,7 +109,8 @@ namespace ClonZones
 
             try
             {
-                Controllers.Add(__instance.Pointer, new Gh3HudController(player, shader, assets, additiveShader));
+                Controllers.Add(__instance.Pointer, new Gh3HudController(player, shader, assets, additiveShader,
+                    Gh3HighwayRenderer.UnderSidesSlot(__instance)));
             }
             catch (Exception error)
             {
@@ -147,6 +155,9 @@ namespace ClonZones
         private readonly Gh3HudScene _scene;
         private readonly Gh3HudScheduler _sched = new();
         private Gh3HudMesh _mesh;
+        // HUD quads below Gh3HudLayout.HighwaySideZ, drawn in the slot just under the GH3 sides.
+        // GH3 sorts HUD and highway elements together by z; Unity can only interleave whole renderers.
+        private Gh3HudMesh _meshUnderSides;
         private Gh3HudVisibility _visibility;
         private readonly System.Random _random = new(0x4A3F);   // bulb pulse Random(@0.1 @*2 0.5): seeded per attach for reproducible captures
         private Gh3HudSnapshot _snap, _prev;
@@ -194,7 +205,7 @@ namespace ClonZones
         private const string StreakContainerId = "HUD_Note_Streak_Combo1";
 
 
-        private Gh3HudController(BasePlayer player, Shader shader, Gh3HudAssets assets, Shader additiveShader = null)
+        private Gh3HudController(BasePlayer player, Shader shader, Gh3HudAssets assets, Shader additiveShader, Gh3HudLayerSlot? underSides)
         {
             _player = player;
             _bridge = new Gh3HudStateBridge(player);
@@ -220,6 +231,9 @@ namespace ClonZones
                 }
                 _mesh = new Gh3HudMesh("clonzones_gh3_hud", _assets.Atlas, shader, camera, camera.gameObject.layer,
                     sortingLayer, 30000, 4000, 256, additiveShader);
+                if (underSides is Gh3HudLayerSlot slot)
+                    _meshUnderSides = new Gh3HudMesh("clonzones_gh3_hud_under_sides", _assets.Atlas, shader, camera, camera.gameObject.layer,
+                        slot.SortingLayer, slot.Order, slot.Queue, 64, additiveShader);
                 BuildScene();
                 _visibility = new Gh3HudVisibility(player, _log);
                 if (!_bridge.Read(ref _snap, _hudStyle == PresentationStyle.Wormod))
@@ -233,7 +247,8 @@ namespace ClonZones
                 _lastSongTime = _snap.SongTime;
                 if (_hudStyle == PresentationStyle.Wormod)
                 {
-                    UpdateWormodRockMeter(_snap.Health);
+                    UpdateWormodMeterHealth();
+                    UpdateWormodRockMeter(_wormodMeterHealth);
                     UpdateWormodStarMeter();
                 }
                 _log?.Msg($"[ClonZones] {_hudStyle} HUD attached: {_scene.Count} elements, viewport {camera.pixelRect.width}x{camera.pixelRect.height}, songTime={_snap.SongTime:F3}.");
@@ -252,6 +267,11 @@ namespace ClonZones
             {
                 _mesh.Dispose();
                 _mesh = null;
+            }
+            if (_meshUnderSides != null)
+            {
+                _meshUnderSides.Dispose();
+                _meshUnderSides = null;
             }
             if (_visibility != null)
             {
@@ -397,12 +417,14 @@ namespace ClonZones
             bool practiceEpochChanged = _hudStyle == PresentationStyle.Wormod &&
                 (_snap.IsPractice != _prev.IsPractice ||
                  (_snap.IsPractice && PracticeRangeChanged(_prev, _snap)));
-            if (engineChanged || practiceEpochChanged || _snap.SongTime < _lastSongTime - 1e-6 || _snap.Score < _prev.Score)
+            bool newAttempt = engineChanged || practiceEpochChanged || _snap.Score < _prev.Score;
+            if (newAttempt || _snap.SongTime < _lastSongTime - 1e-6)
             {
-                ResetPresentation();
+                ResetPresentation(newAttempt);
                 _changed = true;
             }
             _lastSongTime = _snap.SongTime;
+            if (_hudStyle == PresentationStyle.Wormod) UpdateWormodMeterHealth();
             ClonZonesBenchmark.RecordSongTime(_snap.SongTime);
 
             if (!_snap.Paused)
@@ -420,7 +442,7 @@ namespace ClonZones
                 {
                     // Active loop order from gem_scroller: native score/rock
                     // update, then the custom WOR needle, then update_star_meter.
-                    UpdateWormodRockMeter(_snap.Health);
+                    UpdateWormodRockMeter(_wormodMeterHealth);
                     UpdateWormodDullerEdges();
                     UpdateWormodStarMeter();
                 }
@@ -439,16 +461,19 @@ namespace ClonZones
             }
 
             if (_mesh.RefreshViewport()) _changed = true;
+            if (_meshUnderSides != null && _meshUnderSides.RefreshViewport()) _changed = true;
             // Everything is retained in the element tree; rebuild the mesh only when something moved.
             if (_changed || !_drawn)
             {
                 _changed = false;
                 ClonZonesBenchmark.Mark(BenchmarkEvent.HudRebuild);
                 _mesh.Begin();
+                _meshUnderSides?.Begin();
                 long drawStart = ClonZonesProfiler.BeginScope(ProfileScope.HudDraw);
-                _scene.Draw(_mesh);
+                _scene.Draw((IGh3HudQuadSink)_meshUnderSides ?? _mesh, _mesh);
                 ClonZonesProfiler.EndScope(ProfileScope.HudDraw, drawStart);
                 long uploadStart = ClonZonesProfiler.BeginScope(ProfileScope.HudUpload);
+                _meshUnderSides?.Upload();
                 _mesh.Upload();
                 ClonZonesProfiler.EndScope(ProfileScope.HudUpload, uploadStart);
             }
@@ -473,10 +498,15 @@ namespace ClonZones
             _prev = _snap;
         }
 
-        private void ResetPresentation()
+        // newAttempt: engine swap, practice range change or score reset. A plain backwards clock
+        // (CH's resume rewind) rebuilds the presentation too, but it is the same attempt.
+        private void ResetPresentation(bool newAttempt)
         {
             _epoch++;
             _sched.Reset();
+            // WORMod's duller lasts until its HUD is rebuilt, which a pause never does; carry it
+            // across our rebuild unless the attempt itself restarted. BindWormodElements re-applies it.
+            if (newAttempt) { _wormodDullerActive = false; _wormodMeterHealthValid = false; }
             // A new clock epoch needs new element timers too. Partial property resets leave
             // positive old start times behind a clock that has just gone back to zero.
             _scene.Clear();
@@ -647,14 +677,20 @@ namespace ClonZones
             // repaint even when health is constant so a mode toggle cannot leave
             // the previous presentation layered over the new one.
             bool noFailChanged = _hudStyle == PresentationStyle.Gh3 && _snap.NoFail != _gNoFail;
-            if (_snap.Health != _gHealth || noFailChanged)
+            float meterHealth = _hudStyle == PresentationStyle.Wormod ? _wormodMeterHealth : ChMeterHealth();
+            if (meterHealth != _gHealth || noFailChanged)
             {
                 _changed = true;
-                _gHealth = _snap.Health;
+                _gHealth = meterHealth;
                 if (_hudStyle == PresentationStyle.Gh3) _gNoFail = _snap.NoFail;
-                UpdateRockMeter(_snap.Health);
+                UpdateRockMeter(meterHealth);
             }
         }
+
+        // the health CH's own meter shows: bottomed out for good once the attempt fails, while the
+        // engine's health keeps climbing (see Gh3HudStateBridge.ReadFailed). Under no-fail the HUD
+        // follows GH3's no-fail rules instead (GH3 face, WORMod's never-draining meter).
+        private float ChMeterHealth() => _snap.Failed && !_snap.NoFail ? 0f : _snap.Health;
 
         private static int FormatInt(int value, char[] buffer)
         {
@@ -762,7 +798,8 @@ namespace ClonZones
                     {
                         _scene.SetTexture(_tubeFill[i], "HUD_rock_tube_glow_fill_b");
                         _scene.SetTexture(_tubeFull[i], "HUD_rock_tube_glow_full_b");
-                        if (_tubeMorph[i])
+                        // WORMod's rock_meter_star_power_on leaves initial positions (qb 0x8b8), as in RockMeterStarPowerOn.
+                        if (_hudStyle == PresentationStyle.Gh3 && _tubeMorph[i])
                         {
                             _tube[i].SetPos(_tubeFinal[i]);
                             _tubeFill[i].SetPos(_fillFinal[i]);

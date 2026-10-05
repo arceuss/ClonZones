@@ -23,6 +23,13 @@ namespace ClonZones
         public const float BigBulbScale = 1f;
         public const float ScoreFrameWidth = 175f;   // score_frame_width: rescale target once the score passes 5 characters
 
+        // GH3 builds the highway from screen elements too: setup_highway (guitar_highway.q) gives
+        // sidebar_left/right%p an explicit z_priority 3, and an explicit z is absolute, not parent-relative
+        // (GH3.exe CScreenElement::SetZPriority 0x4FBD20 flags it, auto_set_z_priorities_recursive
+        // 0x4FCA40 skips flagged elements). So HUD elements below 3, like WORMod's nixie (zoff 1),
+        // draw under the highway sides.
+        public const float HighwaySideZ = 3f;
+
         // Score text (guitar_hud_2d.q:290-309 + menu_setlist.q:displayText defaults).
         public static readonly Vector2 ScoreTextPos = new(222f, 70f);
         public const float ScoreTextScale = 1.1f;

@@ -18,6 +18,9 @@ namespace ClonZones
         private bool _wormodStarFeatureVisible;
         private bool _wormodCompletionFeatureVisible;
         private bool _wormodDullerActive;
+        // the health the WOR rock meter shows; differs from CH's only under no-fail (UpdateWormodMeterHealth).
+        private float _wormodMeterHealth, _wormodLastHealth;
+        private bool _wormodMeterHealthValid;
         private static readonly float _wormodNeedleSpanX =
             WormodHudLayout.NeedleCurveEnd.x - WormodHudLayout.NeedleCurveStart.x;
         private static readonly float _wormodNeedleSpanY =
@@ -30,6 +33,22 @@ namespace ClonZones
         private Vector2 _wormodCompletionTipPosition = new Vector2 { x = 0f, y = 0f };
 
         private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
+        /// <summary>
+        /// GH3's CrowdDecrease (GH3.exe 0x42A660) returns before touching health when Cheat_NoFail
+        /// is on, while CrowdIncrease still fills the meter, so a no-fail meter only climbs, up to
+        /// full green. CH keeps draining health under no-fail; replay only its rises. WORMod has no
+        /// no-fail art and its SP bulbs hang off this meter, so it stays up and just stops draining
+        /// (GH3 style swaps in its no-fail face instead, see UpdateRockMeter).
+        /// </summary>
+        private void UpdateWormodMeterHealth()
+        {
+            float health = _snap.Health;
+            if (!_snap.NoFail || !_wormodMeterHealthValid) _wormodMeterHealth = ChMeterHealth();
+            else if (health > _wormodLastHealth) _wormodMeterHealth = Math.Min(1f, _wormodMeterHealth + (health - _wormodLastHealth));
+            _wormodLastHealth = health;
+            _wormodMeterHealthValid = true;
+        }
 
         private static bool PracticeRangeChanged(Gh3HudSnapshot previous, Gh3HudSnapshot current)
         {
@@ -84,7 +103,12 @@ namespace ClonZones
             _wormodRenderedCompletion = float.NaN;
             _wormodStarFeatureVisible = true;
             _wormodCompletionFeatureVisible = true;
-            _wormodDullerActive = false;
+            // a carried duller (see ResetPresentation) goes onto the fresh glow and meter.
+            if (_wormodDullerActive)
+            {
+                _wormodStarGlow.SetAlpha(0f);
+                _wormodStarMeter.SetRgba(WormodHudLayout.DullerMeterRgba);
+            }
         }
 
         /// <summary>
@@ -120,8 +144,9 @@ namespace ClonZones
         /// <summary>
         /// The two event call sites for source score-duller are represented by
         /// monotonic CH event counters: every miss, and an unnecessary/ghost note
-        /// only after score has become positive. It intentionally does not restore
-        /// the glow or meter colour until the native HUD epoch is rebuilt.
+        /// only after score has become positive. The glow and meter colour stay
+        /// dulled until a new attempt (see ResetPresentation), as in WORMod, where
+        /// only a HUD rebuild restores them and pausing never rebuilds the HUD.
         /// </summary>
         private void UpdateWormodDullerEdges()
         {

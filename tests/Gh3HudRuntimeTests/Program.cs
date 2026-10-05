@@ -1,6 +1,7 @@
 // Integration regressions against the actual controller and script files. See
 // HostStubs.cs for the synthetic boundary; this is NOT a Clone Hero runtime test.
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using ClonZones;
 using Il2Cpp;
@@ -37,17 +38,17 @@ internal static class Program
         public Fixture(double songTime = 10, PresentationStyle style = PresentationStyle.Gh3, Action<BasePlayer> initialize = null)
         {
             Time.unscaledTime = 0; Input.RightDown = Input.RightUp = false; Gh3HudBreakHook.Clear();
-            GlobalVariables.instance.isPracticeEnabled = false;
+            GlobalVariables.instance.isPracticeEnabled = false; GlobalVariables.instance.failed = false;
             ObjectPublicAbstractSealedBoObObObObObObObObObUnique.field_Public_Static_Object2PublicBoSiInSiDoStSiStStUnique_27 = new();
             LeaderboardsOnlineManager.instance = new();
             Gm.songTime = songTime;
             initialize?.Invoke(Player);
             typeof(Gh3HudController).GetField("_log", BindingFlags.NonPublic | BindingFlags.Static).SetValue(null, new MelonLogger.Instance());
             Hud = (Gh3HudController)typeof(Gh3HudController).GetConstructor(InstancePrivate, null,
-                new[] { typeof(BasePlayer), typeof(Shader), typeof(Gh3HudAssets), typeof(Shader) }, null).Invoke(new object[] {
+                new[] { typeof(BasePlayer), typeof(Shader), typeof(Gh3HudAssets), typeof(Shader), typeof(Gh3HudLayerSlot?) }, null).Invoke(new object[] {
                     Player, new Shader(), new Gh3HudAssets(style, null, 0,
                         style == PresentationStyle.Wormod ? WormodHudLayout.ImageNames : Gh3HudAssets.ImageNames,
-                        Gh3HudAssets.FontNames, new MelonLogger.Instance()), null });
+                        Gh3HudAssets.FontNames, new MelonLogger.Instance()), null, new Gh3HudLayerSlot(0, 1, 2980) });
             Frame(0);
         }
         public void Frame(float dt = 0.016f)
@@ -133,6 +134,60 @@ internal static class Program
             Near(f.Scene.Find("HUD2D_rock_needlep1").Alpha, 0, "no-fail exposed WOR's unused GH3 needle");
             f.Frame(.1f);
             Require(red.Rgba.r != before, "no-fail stopped WOR's flash");
+        });
+        Test("WORMod no-fail meter keeps rises and ignores drops (GH3 CrowdDecrease)", () => {
+            // where the WOR needle sits for a given health on the ordinary meter
+            var at = new Dictionary<float, Vector2>();
+            foreach (float h in new[] { .2f, .5f, .6f, 1f })
+            {
+                using var reference = new Fixture(10, PresentationStyle.Wormod);
+                reference.Engine.field_Protected_Single_0 = h; reference.Frame(0);
+                at[h] = reference.Scene.Find(WormodHudLayout.NeedleId + "p1").Pos;
+            }
+            using var f = new Fixture(10, PresentationStyle.Wormod);
+            Vector2 Needle() => f.Scene.Find(WormodHudLayout.NeedleId + "p1").Pos;
+            var setting = ObjectPublicAbstractSealedBoObObObObObObObObObUnique.field_Public_Static_Object2PublicBoSiInSiDoStSiStStUnique_27;
+            f.Engine.field_Protected_Single_0 = .5f; f.Frame(0);
+            setting.prop_Boolean_0 = true; f.Frame(0);
+            f.Engine.field_Protected_Single_0 = .2f; f.Frame(0);
+            Same(Needle(), at[.5f], "no-fail meter drained on a miss");
+            Near(f.Scene.Find(WormodHudLayout.NeedleId + "p1").Alpha, 1f, "no-fail hid the WOR meter");
+            f.Engine.field_Protected_Single_0 = .3f; f.Frame(0);
+            Same(Needle(), at[.6f], "no-fail meter skipped CH's rise");
+            f.Gm.songTime -= 2; f.Frame(0);
+            Same(Needle(), at[.6f], "resume rebuild lost the no-fail meter");
+            f.Engine.field_Protected_Single_0 = .9f; f.Frame(0);
+            Same(Needle(), at[1f], "no-fail meter went past full green");
+            setting.prop_Boolean_0 = false; f.Engine.field_Protected_Single_0 = .2f; f.Frame(0);
+            Same(Needle(), at[.2f], "the ordinary meter stopped following CH after no-fail");
+        });
+        Test("leaderboard fail keeps the meter bottomed out in both styles while CH's health climbs", () => {
+            foreach (var style in new[] { PresentationStyle.Gh3, PresentationStyle.Wormod })
+            {
+                string needleId = style == PresentationStyle.Gh3 ? "HUD2D_rock_needlep1" : WormodHudLayout.NeedleId + "p1";
+                Gh3HudElement bottom;
+                using (var reference = new Fixture(10, style))
+                {
+                    reference.Engine.field_Protected_Single_0 = 0f; reference.Frame(0);
+                    bottom = reference.Scene.Find(needleId);
+                }
+                float bottomRot = bottom.Rot; Vector2 bottomPos = bottom.Pos;
+                using var f = new Fixture(10, style);
+                // no-fail saved but leaderboard mode on: CH shows its normal meter and doesn't end the song.
+                ObjectPublicAbstractSealedBoObObObObObObObObObUnique.field_Public_Static_Object2PublicBoSiInSiDoStSiStStUnique_27.prop_Boolean_0 = true;
+                LeaderboardsOnlineManager.instance.field_Private_Boolean_0 = true;
+                f.Engine.field_Protected_Single_0 = .5f; f.Frame(0);
+                f.Engine.field_Protected_Single_0 = -.02f; GlobalVariables.instance.failed = true; f.Frame(0);
+                // the engine keeps applying gains after the fail (writer 0x1820F4E30 has no fail check).
+                f.Engine.field_Protected_Single_0 = .4f; f.Frame(0); f.Run(.3f);
+                var needle = f.Scene.Find(needleId);
+                Near(needle.Rot, bottomRot, $"{style} needle climbed after a leaderboard fail");
+                Same(needle.Pos, bottomPos, $"{style} needle moved after a leaderboard fail");
+                f.Gm.songTime -= 2; f.Frame(0);
+                needle = f.Scene.Find(needleId);
+                Near(needle.Rot, bottomRot, $"{style} resume rebuild unpinned the failed meter");
+                Same(needle.Pos, bottomPos, $"{style} resume rebuild moved the failed meter");
+            }
         });
         Test("WORMod low-health flash keeps its phase, pauses, and stops on recovery", () => {
             using var f = new Fixture(10, PresentationStyle.Wormod);
@@ -310,6 +365,55 @@ internal static class Program
                 Same(new Vector2(fill.Dims.x * fill.Scale.x, fill.Dims.y * fill.Scale.y), expected, $"bulb {i} fill size");
             }
         });
+        foreach (PresentationStyle style in new[] { PresentationStyle.Wormod, PresentationStyle.Gh3 })
+        foreach (bool active in new[] { false, true })
+        Test(style + " seek rebuild preserves " + (active ? "active" : "ready") + " SP bulb positions and textures", () => {
+            using var f = new Fixture(10, style);
+            string[] suffixes = { "", "tube", "full" };
+            var initial = new Vector2[3, 3];
+            for (int i = 4; i <= 6; i++)
+                for (int layer = 0; layer < suffixes.Length; layer++)
+                    initial[i - 4, layer] = f.Scene.Find($"HUD2D_rock_tube_{i}p1" + suffixes[layer]).Pos;
+            f.Sp(.6f, false); f.Frame(); f.Run(2);
+            if (active) { f.Sp(.3f, true); f.Frame(); f.Run(.6f); }
+            var old = f.Scene.Find("HUD2D_rock_tube_4p1");
+            f.Gm.songTime -= 2; f.Frame(0);
+            Require(!old.Alive && !ReferenceEquals(old, f.Scene.Find("HUD2D_rock_tube_4p1")),
+                "backwards song clock did not rebuild the scene");
+            for (int i = 4; i <= 6; i++)
+            {
+                for (int layer = 0; layer < suffixes.Length; layer++)
+                {
+                    var element = f.Scene.Find($"HUD2D_rock_tube_{i}p1" + suffixes[layer]);
+                    // GH3's big bulbs extend 170 authored units; WORMod leaves the created positions.
+                    Vector2 expected = initial[i - 4, layer] + new Vector2(0f, style == PresentationStyle.Gh3 ? -170f : 0f);
+                    Same(element.Pos, expected, $"bulb {i} {suffixes[layer]} after seek");
+                }
+                Require(f.Scene.Find($"HUD2D_rock_tube_{i}p1tube").TextureName == "HUD_rock_tube_glow_fill_b",
+                    $"bulb {i} fill lost the SP texture");
+                Require(f.Scene.Find($"HUD2D_rock_tube_{i}p1full").TextureName == "HUD_rock_tube_glow_full_b",
+                    $"bulb {i} full lost the SP texture");
+            }
+        });
+        Test("WORMod ready attachment keeps created SP bulb positions and star textures", () => {
+            using var baseline = new Fixture(10, PresentationStyle.Wormod);
+            using var ready = new Fixture(10, PresentationStyle.Wormod, p => {
+                p.engine.prop_Single_0 = .6f;
+                p.engine.field_Public_Int64_0 = (long)(.6f * p.engine.field_Public_Int64_2);
+            });
+            for (int i = 4; i <= 6; i++)
+            {
+                foreach (string suffix in new[] { "", "tube", "full" })
+                {
+                    string id = $"HUD2D_rock_tube_{i}p1" + suffix;
+                    Same(ready.Scene.Find(id).Pos, baseline.Scene.Find(id).Pos, id + " on ready attachment");
+                }
+                Require(ready.Scene.Find($"HUD2D_rock_tube_{i}p1tube").TextureName == "HUD_rock_tube_glow_fill_b",
+                    $"bulb {i} fill missing the SP texture on attachment");
+                Require(ready.Scene.Find($"HUD2D_rock_tube_{i}p1full").TextureName == "HUD_rock_tube_glow_full_b",
+                    $"bulb {i} full missing the SP texture on attachment");
+            }
+        });
         Test("the same milestone announces again on a new streak", () => {
             using var f = new Fixture(); f.Streak(50); f.Frame();
             Require(f.Scene.Exists("HUD_Note_Streak_Combo1"), "first banner");
@@ -452,6 +556,37 @@ internal static class Program
                 Gh3HudBreakHook.GhostCount++; ghost.Frame();
                 Near(glow.Alpha, 0f, "positive-score ghost glow");
                 Same(meter.Rgba, WormodHudLayout.DullerMeterRgba, "positive-score ghost meter");
+            }
+        });
+        Test("WORMod duller survives the resume rewind's presentation rebuild", () => {
+            using var f = new Fixture(10, PresentationStyle.Wormod);
+            var oldGlow = f.Scene.Find(WormodHudLayout.StarGlowId + "p1");
+            Gh3HudBreakHook.MissCount++; f.Frame();
+            Near(oldGlow.Alpha, 0f, "miss did not dull the glow");
+            // pause, CH's clock comes back behind the paused point, then play resumes.
+            f.Gm.isPaused = true; f.Frame(0);
+            f.Gm.songTime -= 2; f.Frame(0);
+            f.Gm.isPaused = false; f.Frame(.1f); f.Run(.5f);
+            var glow = f.Scene.Find(WormodHudLayout.StarGlowId + "p1");
+            Require(!oldGlow.Alive && !ReferenceEquals(oldGlow, glow), "the rewind did not rebuild the presentation");
+            Near(glow.Alpha, 0f, "glow came back after resume");
+            Same(f.Scene.Find(WormodHudLayout.StarMeterId + "p1").Rgba, WormodHudLayout.DullerMeterRgba, "meter colour came back after resume");
+        });
+        Test("WORMod duller clears on a new attempt (engine swap or score reset)", () => {
+            using (var swap = new Fixture(10, PresentationStyle.Wormod))
+            {
+                Gh3HudBreakHook.MissCount++; swap.Frame();
+                swap.Player.engine = new() { Pointer = (IntPtr)2 }; swap.Frame();
+                Near(swap.Scene.Find(WormodHudLayout.StarGlowId + "p1").Alpha, 1f, "engine swap kept the old attempt's duller glow");
+                Same(swap.Scene.Find(WormodHudLayout.StarMeterId + "p1").Rgba, new Color32(196, 169, 65, 255), "engine swap kept the duller meter");
+            }
+            using (var reset = new Fixture(10, PresentationStyle.Wormod))
+            {
+                reset.Engine.prop_Int32_2 = 500; reset.Frame();
+                Gh3HudBreakHook.MissCount++; reset.Frame();
+                reset.Engine.prop_Int32_2 = 0; reset.Gm.songTime = 0; reset.Frame();
+                Near(reset.Scene.Find(WormodHudLayout.StarGlowId + "p1").Alpha, 1f, "score reset kept the old attempt's duller glow");
+                Same(reset.Scene.Find(WormodHudLayout.StarMeterId + "p1").Rgba, new Color32(196, 169, 65, 255), "score reset kept the duller meter");
             }
         });
         Test("WORMod invalid star/completion inputs hide independently and recover without restoring duller", () => {

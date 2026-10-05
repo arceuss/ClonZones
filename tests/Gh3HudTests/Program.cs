@@ -270,6 +270,23 @@ internal static class Program
         scene.CreateSprite("c", dim, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 5f, 1f, new Color32(255, 255, 255, 255));
         sink = new Sink(); scene.Draw(sink);
         Check(sink.Quads[0].color.a == 127 && sink.Quads[1].color.a == 50 && sink.Quads[2].color.a == 127, "z sort with construction-order ties and alpha chain (b, a, c)");
+
+        // GH3 sidebars are z 3: anything below goes to the under-the-highway-sides sink, the rest
+        // (tie at 3 included) stays over it, each side in the same z order as a single sink.
+        scene = new Gh3HudScene(Region);
+        scene.CreateSprite("over_tie", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, Gh3HudLayout.HighwaySideZ, 1f, new Color32(255, 255, 255, 3));
+        scene.CreateSprite("nixie", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 1f, 1f, new Color32(255, 255, 255, 1));
+        scene.CreateSprite("glow", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, -20f, 1f, new Color32(255, 255, 255, 2));
+        scene.CreateSprite("body", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 3.2f, 1f, new Color32(255, 255, 255, 4));
+        var under = new Sink(); var over = new Sink();
+        scene.Draw(under, over);
+        Check(under.Quads.Count == 2 && under.Quads[0].color.a == 2 && under.Quads[1].color.a == 1,
+            "z below the highway sides goes under them, in z order (glow -20, nixie 1)");
+        Check(over.Quads.Count == 2 && over.Quads[0].color.a == 3 && over.Quads[1].color.a == 4,
+            "z at or above the sides stays over them (tie 3, body 3.2)");
+        sink = new Sink(); scene.Draw(sink);
+        Check(sink.Quads.Count == 4 && sink.Quads[0].color.a == 2 && sink.Quads[1].color.a == 1 && sink.Quads[2].color.a == 3 && sink.Quads[3].color.a == 4,
+            "one sink still gets every quad in plain z order");
  
         // Source blend declarations stay in z-ordered emission order, including tied overlapping z.
         scene = new Gh3HudScene(Region);

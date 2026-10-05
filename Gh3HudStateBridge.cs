@@ -21,6 +21,7 @@ namespace ClonZones
         public int Multiplier;     // effective 1..4, 2/4/6/8 while SP is active
         public float Health;       // 0..1, fail at <= 0
         public bool NoFail;        // no-fail HUD presentation after the leaderboard override
+        public bool Failed;        // GlobalVariables.failed: CH stopped feeding its own meter (ReadFailed)
         public float StarPower;    // 0..1
         public bool StarPowerActive;
         public bool StarPowerReady;
@@ -138,6 +139,16 @@ namespace ClonZones
                 (!Alive(LeaderboardsOnlineManager.instance) || !LeaderboardsOnlineManager.prop_Boolean_1);
         }
 
+        // BasePlayer 0x180207E60 (health changed) sets GlobalVariables.failed the first time health
+        // reaches 0 outside practice and from then on returns before HealthContainer.SetHealth, so
+        // CH's meter stays bottomed out; GameManager's start coroutine (0x1800D905C) clears it. With
+        // no-fail on in leaderboard mode the song keeps going and the engine keeps adding gains.
+        private static bool ReadFailed()
+        {
+            GlobalVariables globals = GlobalVariables.instance;
+            return Alive(globals) && globals.failed;
+        }
+
         /// <summary>False when the player or engine is gone (scene teardown, engine swap).</summary>
         public bool Read(ref Gh3HudSnapshot s, bool presentation = false)
         {
@@ -158,6 +169,7 @@ namespace ClonZones
             s.Multiplier = engine.field_Protected_Int32_0;
             s.Health = engine.field_Protected_Single_0;
             s.NoFail = ReadNoFail();
+            s.Failed = ReadFailed();
             s.StarPower = engine.prop_Single_0;       // Method_Public_get_Single_0: raw / max
             s.StarPowerActive = engine.field_Public_Boolean_0;
             // Readiness: raw accumulator (0x68) against the half-bar threshold (0x1B8); the interop

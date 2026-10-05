@@ -34,6 +34,24 @@ namespace ClonZones
         private double _window;
         private int _pulse = -1;
         private bool _disposed;
+        // field meshes sit on CH's beat-line template slot: eighths at its order, strings +1, sides +2.
+        internal const int SideOrderOffset = 2;
+
+        /// <summary>
+        /// The slot right under the GH3 sides, for the HUD quads GH3 draws below them
+        /// (Gh3HudLayout.HighwaySideZ). It ties with the strings' order; GH3 has the strings (z 2)
+        /// over a z 1 nixie, but nothing in the HUD reaches the strings, so the tie never shows.
+        /// </summary>
+        internal static Gh3HudLayerSlot? UnderSidesSlot(BeatRenderer beats)
+        {
+            var bars = beats.field_Protected_Il2CppReferenceArray_1_SpriteRenderer_0;
+            if (bars == null || bars.Length == 0) return null;
+            SpriteRenderer template = bars[0];
+            if (template == null) return null;
+            Material material = template.sharedMaterial;
+            if (material == null) return null;
+            return new Gh3HudLayerSlot(template.sortingLayerID, template.sortingOrder + SideOrderOffset - 1, material.renderQueue);
+        }
 
         private sealed class NativeBar
         {
@@ -180,7 +198,7 @@ namespace ClonZones
                 // The GPU texture rounds up; the sprite retains the TEX dimensions.
                 _sideCoverage=new Vector2((float)_sideWidth/Mathf.NextPowerOfTwo(_sideWidth),
                     (float)_sideHeight/Mathf.NextPowerOfTwo(_sideHeight));
-                _sides=new Gh3HighwayMesh("clonzones_gh3_sides",HighwaySpriteBank.Sidebar,shader,_bridge,layer,sorting,order+2,queue,2);
+                _sides=new Gh3HighwayMesh("clonzones_gh3_sides",HighwaySpriteBank.Sidebar,shader,_bridge,layer,sorting,order+SideOrderOffset,queue,2);
                 if(player.trackSidebarLeft != null) Hide(player.trackSidebarLeft.GetComponent<Renderer>());
                 if(player.trackSidebarRight != null) Hide(player.trackSidebarRight.GetComponent<Renderer>());
             }

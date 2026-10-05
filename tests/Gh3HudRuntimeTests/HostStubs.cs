@@ -118,6 +118,7 @@ namespace Il2Cpp
     {
         public static GlobalVariables instance = new();
         public bool isPracticeEnabled;
+        public bool failed;
         public static readonly IntPtr NativeFieldInfoPtr_isPracticeEnabled = (IntPtr)0x72;
     }
     public class ObjectPublicAbstractDoBoDoInBoObDoInSiBoUnique : NativeObject
@@ -160,6 +161,10 @@ namespace ClonZones
         public static float UnscaledDeltaTime => UnityEngine.Time.unscaledDeltaTime;
         public static bool MouseButtonDown(int button) => UnityEngine.Input.GetMouseButtonDown(button);
         public static bool MouseButtonUp(int button) => UnityEngine.Input.GetMouseButtonUp(button);
+    }
+    internal static class Gh3HighwayRenderer
+    {
+        public static Gh3HudLayerSlot? UnderSidesSlot(Il2Cpp.BeatRenderer beats) => null;
     }
     internal sealed class Gh3HudAssets : IDisposable
     {
