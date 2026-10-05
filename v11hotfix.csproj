@@ -410,11 +410,19 @@
 	<ItemGroup>
 		<Compile Include="Core.cs" />
 		<Compile Include="ClonZonesProfiler.cs" />
+		<Compile Include="ClonZonesBenchmark.cs" />
+		<Compile Include="HostAllocationFixes.cs" />
+		<Compile Include="UnityIcalls.cs" />
 		<Compile Include="NoteHeadSpriteBank.cs" />
 		<Compile Include="GuitarNoteHeadPatch.cs" />
+		<Compile Include="GuitarNoteColor.cs" />
 		<Compile Include="FretSpriteBank.cs" />
 		<Compile Include="GuitarFretPatch.cs" />
 		<Compile Include="FlameSpriteBank.cs" />
+		<Compile Include="FlameFxModel.cs" />
+		<Compile Include="FlameAssetPaths.cs" />
+		<Compile Include="FlameFxMesh.cs" />
+		<Compile Include="FlameFxProjection.cs" />
 		<Compile Include="GuitarFlamePatch.cs" />
 		<Compile Include="SustainFxBank.cs" />
 		<Compile Include="SustainFxPatch.cs" />
@@ -431,9 +439,12 @@
 		<Compile Include="Gh3NoteProjection.cs" />
 		<Compile Include="Gh3HighwayBacking.cs" />
 		<Compile Include="Gh3HudTypes.cs" />
+		<Compile Include="PresentationSettings.cs" />
+		<Compile Include="HudAssetPaths.cs" />
 		<Compile Include="Gh3HudAssets.cs" />
 		<Compile Include="Gh3HudFont.cs" />
 		<Compile Include="Gh3HudLayout.cs" />
+		<Compile Include="WormodHudLayout.cs" />
 		<Compile Include="Gh3HudRules.cs" />
 		<Compile Include="Gh3HudElement.cs" />
 		<Compile Include="Gh3HudScheduler.cs" />
@@ -443,6 +454,7 @@
 		<Compile Include="Gh3HudVisibility.cs" />
 		<Compile Include="Gh3HudController.cs" />
 		<Compile Include="Gh3HudScripts.cs" />
+		<Compile Include="Gh3HudWormod.cs" />
 		<Compile Include="Gh3HudDiagnostics.cs" />
 		<Compile Include="Gh3HudSpMeter.cs" />
 		<Compile Include="Gh3HudFcLabel.cs" />
@@ -450,14 +462,20 @@
 		<Content Include="Directory.Build.props" />
 	</ItemGroup>
 
-	<!-- Reference assemblies always come from GamePath; the built DLL goes to
-	     DeployDir, which defaults to the live Mods folder. Pass
-	     -p:DeployDir=<staging> to build without touching the installed mod. -->
+	<!-- Live deployment is explicit. Ordinary builds stay under the checkout. -->
 	<PropertyGroup>
-		<DeployDir Condition="'$(DeployDir)' == ''">$(GamePath)/Mods</DeployDir>
+		<DeployDir Condition="'$(DeployDir)' == ''">$(MSBuildProjectDirectory)/bin/staging</DeployDir>
 	</PropertyGroup>
 
+	<!-- Mod-owned art that no converter can extract (WORMod stars 6/7). DeployDir is the
+	     Mods folder, and the runtime's shared fallback is Mods/ClonZones/fallback. -->
+	<ItemGroup>
+		<FallbackAsset Include="assets/fallback/**/*.png" />
+	</ItemGroup>
+
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
+		<MakeDir Directories="$(DeployDir)" />
 		<Exec Command="COPY &quot;$(TargetPath)&quot; &quot;$(DeployDir)&quot;" />
+		<Copy SourceFiles="@(FallbackAsset)" DestinationFiles="@(FallbackAsset->'$(DeployDir)/ClonZones/fallback/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
 	</Target>
 </Project>

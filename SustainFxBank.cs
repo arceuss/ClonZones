@@ -81,6 +81,7 @@ namespace ClonZones
                 }
             }
 
+            ClonZonesBenchmark.Mark(BenchmarkEvent.SustainFrames);
             return CreateFrames(_texture, ppu, pivot);
         }
 

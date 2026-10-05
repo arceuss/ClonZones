@@ -6,17 +6,15 @@ namespace ClonZones
     /// <summary>
     /// Full-combo label, reimplemented from GH3 Deluxe's dx_fc_hud.q / guitar_events.q
     /// with PFC support: on the first hit "PFC" rises in with a looping Char_Select_Hilite1
-    /// glow; a combo break that CH does not count as a missed note (overstrum / ghost
-    /// input) turns it into "FC"; a missed note sends it back down and it never returns
-    /// this run (Deluxe's dont_create_fc_hud). Positions are this layout's adaptation of
-    /// the Deluxe anchor; colours, timings and the glow loop are Deluxe's.
+    /// glow; any combo break sends it back down and it never returns this run
+    /// (Deluxe's dont_create_fc_hud). Positions are this layout's adaptation of the
+    /// Deluxe anchor; colours, timings and the glow loop are Deluxe's.
     /// </summary>
     internal sealed partial class Gh3HudController
     {
-        private enum FcState { Waiting, Perfect, Full, Lost }
+        private enum FcState { Waiting, Perfect, Lost }
 
         private FcState _fcState;
-        private bool _fcGhosted;       // a no-miss combo break happened before the label existed
         private Gh3HudElement _fcText, _fcGlow;
 
         private const string FcTextId = "dx_fc_hud", FcGlowId = "dx_fc_hud_glowburst";
@@ -27,44 +25,35 @@ namespace ClonZones
             if (_synchronizeState)
             {
                 // Hydrating mid-song from the counters accumulated so far.
-                _fcGhosted = _snap.GhostEvents > 0;
-                if (_snap.MissEvents > 0) { _fcState = FcState.Lost; return; }
+                if (_snap.MissEvents > 0 || _snap.GhostEvents > 0) { _fcState = FcState.Lost; return; }
                 if (_snap.Streak > 0)
                 {
-                    CreateFcLabel(_fcGhosted ? FcState.Full : FcState.Perfect);
+                    CreateFcLabel();
                     _fcText.SetPos(Gh3HudLayout.FcLabelPos); _fcText.SetAlpha(1f);
                 }
                 return;
             }
-            bool missed = _snap.MissEvents > _prev.MissEvents;
-            bool broke = _snap.GhostEvents > _prev.GhostEvents;
-            if (missed)
+            bool broke = _snap.MissEvents > _prev.MissEvents || _snap.GhostEvents > _prev.GhostEvents;
+            if (broke)
             {
-                if (_fcState == FcState.Perfect || _fcState == FcState.Full)
+                if (_fcState == FcState.Perfect)
                     _sched.Spawn("dx_fc_hud_go_away", FcGoAway());
                 _fcState = FcState.Lost;
                 return;
             }
-            if (broke)
-            {
-                // Overstrum/ghost: a combo break whose callback carries the overstrum flag.
-                if (_fcState == FcState.Perfect) { _fcState = FcState.Full; _fcText.SetText("FC"); _changed = true; }
-                else if (_fcState == FcState.Waiting) _fcGhosted = true;
-                return;
-            }
             if (_fcState == FcState.Waiting && _snap.Streak > _prev.Streak)
             {
-                CreateFcLabel(_fcGhosted ? FcState.Full : FcState.Perfect);
+                CreateFcLabel();
                 _fcText.Morph(Gh3Morph.Of(0.2f, Gh3Motion.Linear).WithPos(Gh3HudLayout.FcLabelPos).WithAlpha(1f), _sched.NowMs);
                 _sched.Spawn("animate_dx_fc_glowburst", FcGlowburst());
                 _changed = true;
             }
         }
 
-        private void CreateFcLabel(FcState state)
+        private void CreateFcLabel()
         {
-            _fcState = state;
-            _fcText = _scene.CreateText(FcTextId, _hudDestroyGroup, Gh3HudAssets.Font("text_a6"), state == FcState.Full ? "FC" : "PFC",
+            _fcState = FcState.Perfect;
+            _fcText = _scene.CreateText(FcTextId, _hudDestroyGroup, _assets.Font("text_a6"), "PFC",
                 Gh3HudLayout.FcLabelHiddenPos, Gh3HudLayout.JustCenterTop, 2f, 0f, Gh3HudLayout.FcLabelRgba, Vector2.one);
             _fcText.Shadow = true; _fcText.ShadowOffset = new Vector2(2f, 2f); _fcText.ShadowRgba = Gh3HudLayout.FcLabelShadowRgba;
             // Deluxe parents the 64x64 glow to the text; centred behind the label here.

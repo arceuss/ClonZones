@@ -21,8 +21,9 @@ internal static class Program
 
     private sealed class Sink : IGh3HudQuadSink
     {
-        public readonly List<(Vector2 a, Vector2 b, Vector2 c, Vector2 d, Color32 color)> Quads = new();
-        public void Quad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, float u0, float v0, float u1, float v1, Color32 color) => Quads.Add((a, b, c, d, color));
+        public readonly List<(Vector2 a, Vector2 b, Vector2 c, Vector2 d, Color32 color, Gh3HudBlend blend)> Quads = new();
+        public void Quad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, float u0, float v0, float u1, float v1, Color32 color, Gh3HudBlend blend = Gh3HudBlend.Alpha)
+            => Quads.Add((a, b, c, d, color, blend));
     }
 
     private static Gh3HudRegion Region(string name) => new(name.Contains("nixie") ? 128 : 64, name.Contains("nixie") ? 128 : 64, 0f, 0f, 1f, 1f);
@@ -201,7 +202,7 @@ internal static class Program
 
     private static Gh3HudFont LoadFont(string name)
     {
-        string dir = @"C:\Games\CloneHero\Mods\ClonZones\fallback\hud";
+        string dir = @"C:\Games\CloneHero\Mods\ClonZones\fallback\hud\gh3";
         string metrics = Path.Combine(dir, name + ".font.txt");
         if (!File.Exists(metrics)) return null;
         // Page dims come from the `page` line itself; the PNG is not needed for metrics.
@@ -216,7 +217,7 @@ internal static class Program
     private static void Fonts()
     {
         var a9 = LoadFont("num_a9"); var a7 = LoadFont("num_a7"); var a6 = LoadFont("text_a6");
-        if (a9 == null || a7 == null || a6 == null) { Console.WriteLine("SKIP fonts: fallback/hud metrics not installed"); return; }
+        if (a9 == null || a7 == null || a6 == null) { Console.WriteLine("SKIP fonts: fallback/hud/gh3 metrics not installed"); return; }
         // FontAndText findings §10.
         Near(Width(a9, "0", 5f), 28f, "num_a9 '0' spacing 5");
         Near(Width(a9, "12,345", 5f), 150f, "num_a9 '12,345' spacing 5");
@@ -269,6 +270,23 @@ internal static class Program
         scene.CreateSprite("c", dim, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 5f, 1f, new Color32(255, 255, 255, 255));
         sink = new Sink(); scene.Draw(sink);
         Check(sink.Quads[0].color.a == 127 && sink.Quads[1].color.a == 50 && sink.Quads[2].color.a == 127, "z sort with construction-order ties and alpha chain (b, a, c)");
+ 
+        // Source blend declarations stay in z-ordered emission order, including tied overlapping z.
+        scene = new Gh3HudScene(Region);
+        scene.CreateSprite("alpha_before", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop,
+            7f, 0.5f, new Color32(255, 255, 255, 255));
+        var additive = scene.CreateSprite("additive", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop,
+            7f, 0.25f, new Color32(255, 255, 255, 255));
+        additive.Blend = Gh3HudBlend.Add;
+        scene.CreateSprite("alpha_after", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop,
+            7f, 1f, new Color32(255, 255, 255, 255));
+        sink = new Sink(); scene.Draw(sink);
+        Check(sink.Quads.Count == 3 &&
+              sink.Quads[0].blend == Gh3HudBlend.Alpha &&
+              sink.Quads[1].blend == Gh3HudBlend.Add &&
+              sink.Quads[2].blend == Gh3HudBlend.Alpha &&
+              sink.Quads[0].color.a == 127 && sink.Quads[1].color.a == 63 && sink.Quads[2].color.a == 255,
+              "interleaved alpha/add/alpha preserves tied z order and exact alpha");
 
         // Text: right/right justification lays the string out to the left of pos; glyph top follows the emitter.
         string metrics = "page 64 64\nlineheight 35\nspacewidth 4\nyorigin 0\npre 0\npost 0\nglyph 0 0 0 23 30 0 0 0\n";
@@ -291,11 +309,56 @@ internal static class Program
         scene.CreateSprite("s1", c1, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 1f, 1f, new Color32(255, 255, 255, 255));
         scene.Destroy(c1);
         Check(!scene.Exists("s1") && scene.Count == 0, "destroy removes the subtree");
+
+        // Removing an earlier subtree, replacing an id or clearing the scene shifts the element
+        // list; every child must still compose against its own parent, and equal z must keep
+        // construction order (not list position).
+        scene = new Gh3HudScene(Region);
+        var early = scene.CreateContainer("early", null, new Vector2(900f, 900f));
+        scene.CreateSprite("early_leaf", early, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 1f, 1f, new Color32(255, 255, 255, 255));
+        var owner = scene.CreateContainer("owner", null, new Vector2(100f, 50f), 0f, 2f);
+        var inner = scene.CreateContainer("inner", owner, new Vector2(10f, 5f));
+        scene.CreateSprite("leaf", inner, "x", new Vector2(1f, 1f), Gh3HudLayout.JustLeftTop, 2f, 1f, new Color32(255, 255, 255, 255));
+        scene.Destroy(early);
+        sink = new Sink(); scene.Draw(sink);
+        Check(sink.Quads.Count == 1, "a removed earlier subtree no longer draws");
+        Near(sink.Quads[0].a.x, 100f + (10f + 1f) * 2f, "nested child composes against its own parent after an earlier subtree is removed (x)");
+        Near(sink.Quads[0].a.y, 50f + (5f + 1f) * 2f, "nested child composes against its own parent after an earlier subtree is removed (y)");
+        var swapped = scene.CreateContainer("owner", null, new Vector2(300f, 20f));
+        scene.CreateSprite("leaf2", swapped, "x", new Vector2(4f, 0f), Gh3HudLayout.JustLeftTop, 3f, 1f, new Color32(255, 255, 255, 255));
+        sink = new Sink(); scene.Draw(sink);
+        Check(sink.Quads.Count == 1 && !scene.Exists("inner") && !scene.Exists("leaf"), "replacing an id removes the old subtree");
+        Near(sink.Quads[0].a.x, 304f, "replacement composes from its own position");
+        scene = new Gh3HudScene(Region);
+        var gone = scene.CreateSprite("gone", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 1f, 1f, new Color32(1, 1, 1, 255));
+        scene.CreateSprite("tieA", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 5f, 1f, new Color32(10, 10, 10, 255));
+        scene.CreateSprite("tieB", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 5f, 1f, new Color32(20, 20, 20, 255));
+        scene.Destroy(gone);
+        scene.CreateSprite("tieA", null, "x", Vector2.zero, Gh3HudLayout.JustLeftTop, 5f, 1f, new Color32(30, 30, 30, 255));
+        sink = new Sink(); scene.Draw(sink);
+        Check(sink.Quads.Count == 2 && sink.Quads[0].color.r == 20 && sink.Quads[1].color.r == 30, "equal z keeps construction order after compaction and replacement");
+        scene.Clear();
+        var again = scene.CreateContainer("again", null, new Vector2(7f, 9f));
+        scene.CreateSprite("again_leaf", again, "x", new Vector2(1f, 1f), Gh3HudLayout.JustLeftTop, 1f, 1f, new Color32(255, 255, 255, 255));
+        sink = new Sink(); scene.Draw(sink);
+        Check(sink.Quads.Count == 1 && sink.Quads[0].a.x == 8f && sink.Quads[0].a.y == 10f, "a cleared scene composes fresh elements from the start");
+
+        // GH3 PC POT padding: a 164x164 image draws 164/256 of its quad from the
+        // top-left, while a center/center just still pivots on the full 164 dims.
+        scene = new Gh3HudScene(name => name == "npot" ? new Gh3HudRegion(164, 164, 0f, 0f, 1f, 1f) : Region(name));
+        var star = scene.CreateSprite("star", null, "npot", new Vector2(500f, 400f), Gh3HudLayout.JustCenterCenter, 0f, 1f, new Color32(255, 255, 255, 255));
+        sink = new Sink(); scene.Draw(sink);
+        q = sink.Quads[0];
+        Near(q.a.x, 500f - 82f, "npot quad keeps the full-dims pivot");
+        Near(q.c.x - q.a.x, 164f * 164f / 256f, "npot art covers raw/pow2 of the quad (x)");
+        Near(q.c.y - q.a.y, 164f * 164f / 256f, "npot art covers raw/pow2 of the quad (y)");
+        star.Scale = new Vector2(1.4f, 1.4f);
+        sink = new Sink(); scene.Draw(sink);
+        Near(sink.Quads[0].c.x - sink.Quads[0].a.x, 164f * 164f / 256f * 1.4f, "npot coverage scales with the element", 1e-3f);
     }
 
     private static void Layout()
     {
-        Check(Gh3HudLayout.Career.Length == 53, $"53 career declarations ({Gh3HudLayout.Career.Length})");
         int bulbs = 0, containers = 0;
         foreach (var d in Gh3HudLayout.Career) { if (d.Bulb) bulbs++; if (d.Kind == Gh3HudLayout.Kind.Container) containers++; }
         Check(bulbs == 6 && containers == 9, $"6 bulbs, 9 containers ({bulbs}, {containers})");

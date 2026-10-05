@@ -36,5 +36,6 @@ namespace UnityEngine
         public static float Min(float a, float b) => a < b ? a : b;
         public static float Max(float a, float b) => a > b ? a : b;
         public static float Clamp01(float v) => v < 0f ? 0f : v > 1f ? 1f : v;
+        public static int NextPowerOfTwo(int v) { int p = 1; while (p < v) p <<= 1; return p; }
     }
 }

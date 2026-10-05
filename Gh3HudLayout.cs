@@ -75,6 +75,8 @@ namespace ClonZones
             public float Alpha = 1f;
             public Color32? Rgba;
             public Vector2 Just = JustLeftTop;
+            public float SpriteScale = 1f;   // source `scale`: resize Dims after creation, never parent hierarchy scale
+            public Gh3HudBlend Blend = Gh3HudBlend.Alpha;
             public bool Bulb;                // `container` sprite with tube/full children
             public string TubeTexture, TubeStarTexture; public Vector2 TubeDims, TubePosOff; public float TubeZ, TubeAlpha;
             public string FullTexture, FullStarTexture; public float FullZ, FullAlpha;
@@ -121,7 +123,7 @@ namespace ClonZones
             Texture = $"HUD_score_nixie_{variant}", PosOff = new Vector2(70f, 90f), Z = 4f, Alpha = 0f,
         };
 
-        /// <summary>The 53 declarations in source order (construction order is the z tie-break).</summary>
+        /// <summary>Declarations in construction order (the z tie-break).</summary>
         public static readonly Decl[] Career =
         {
             new() { Id = "HUD2D_rock_container", Kind = Kind.Container, PosType = "offscreen_rock_pos" },
@@ -131,6 +133,8 @@ namespace ClonZones
             new() { Id = "HUD2D_rock_BG_green", Kind = Kind.Sprite, Parent = "HUD2D_rock_body", Texture = "HUD_rock_BG_green", Z = 16f },
             new() { Id = "HUD2D_rock_BG_red", Kind = Kind.Sprite, Parent = "HUD2D_rock_body", Texture = "HUD_rock_BG_red", Z = 14f },
             new() { Id = "HUD2D_rock_BG_yellow", Kind = Kind.Sprite, Parent = "HUD2D_rock_body", Texture = "HUD_rock_BG_yellow", Z = 15f },
+            // fastgh3 extension, not part of the original career layout.
+            new() { Id = "HUD2D_rock_BG_nofail", Kind = Kind.Sprite, Parent = "HUD2D_rock_body", Texture = "HUD_rock_BG_nofail", Z = 13f, Alpha = 0f },
             new() { Id = "HUD2D_rock_lights_all", Kind = Kind.Sprite, Parent = "HUD2D_rock_body", Texture = "HUD_rock_lights_all", Z = 17f },
             new() { Id = "HUD2D_rock_lights_green", Kind = Kind.Sprite, Parent = "HUD2D_rock_body", Texture = "HUD_rock_lights_green",
                 PosOff = new Vector2(128f, 0f), Z = 18f, Just = JustLeftTop, Alpha = 0f },

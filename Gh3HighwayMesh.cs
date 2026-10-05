@@ -61,6 +61,7 @@ namespace ClonZones
         {
             int capacity = checked(Math.Max(1, quads) * 24);
             if (_vertices != null && _vertices.Length >= capacity) return;
+            if (_vertices != null) ClonZonesBenchmark.Mark(BenchmarkEvent.MeshGrowth);
             Array.Resize(ref _vertices, capacity);
             _indices = new Il2CppStructArray<int>(capacity);
             for (int i = 0; i < capacity; i++) _indices[i] = i;
@@ -87,10 +88,10 @@ namespace ClonZones
             float v0, float v1, Color32 c0, Color32 c1, float u0 = 0f, float u1 = 1f)
         {
             if (_count + 6 > _vertices.Length) Reserve((_vertices.Length / 24) * 2);
-            Vertex a = new Vertex { Position = p0, Color = c0, UV = new Vector2(u0, v0) };
-            Vertex b = new Vertex { Position = p1, Color = c0, UV = new Vector2(u1, v0) };
-            Vertex c = new Vertex { Position = p2, Color = c1, UV = new Vector2(u1, v1) };
-            Vertex d = new Vertex { Position = p3, Color = c1, UV = new Vector2(u0, v1) };
+            Vertex a = new Vertex { Position = p0, Color = c0, UV = new Vector2 { x = u0, y = v0 } };
+            Vertex b = new Vertex { Position = p1, Color = c0, UV = new Vector2 { x = u1, y = v0 } };
+            Vertex c = new Vertex { Position = p2, Color = c1, UV = new Vector2 { x = u1, y = v1 } };
+            Vertex d = new Vertex { Position = p3, Color = c1, UV = new Vector2 { x = u0, y = v1 } };
             _vertices[_count++] = a; _vertices[_count++] = b; _vertices[_count++] = c;
             _vertices[_count++] = a; _vertices[_count++] = c; _vertices[_count++] = d;
         }
@@ -103,18 +104,19 @@ namespace ClonZones
         }
 
         public void Strip(float ax, float ay, float dx, float dy, float length, float width, bool mirror, Color32 color,
-            float coverageX = 1f, float coverageY = 1f)
+            float coverageX = 1f, float coverageY = 1f, float lengthScale = 1f)
         {
             float inverseLength = 1f / MathF.Sqrt(dx*dx + dy*dy);
             float nx = dx * inverseLength, ny = dy * inverseLength;
             float px = -ny * width * 0.5f, py = nx * width * 0.5f;
-            float tx = ax + nx * length, ty = ay + ny * length;
+            float tx = ax + nx * (length * lengthScale), ty = ay + ny * (length * lengthScale);
             float u0 = mirror ? 1f : 0f, u1 = mirror ? 0f : 1f;
             // GH3's D3DX_FILTER_NONE upload pads NPOT art at the right/bottom.
             // Keep the original sprite pivot, but emit only the source-covered
             // rectangle instead of allocating the transparent padded texture.
             float left = mirror ? 1f - 2f * coverageX : -1f;
             float right = mirror ? 1f : 2f * coverageX - 1f;
+            // extend the tip, not the NPOT padding trim, or the visible near edge moves.
             float bx = ax + nx * length * (1f - coverageY);
             float by = ay + ny * length * (1f - coverageY);
             SetQuad(new Point(bx+px*left,by+py*left,u0,0f), new Point(bx+px*right,by+py*right,u1,0f),
@@ -131,10 +133,11 @@ namespace ClonZones
             }
             // Split at both fade planes. Linear vertex alpha is then exact within
             // each band, even for the rotated string/sidebar quads.
-            int n = Clip(_quad, 4, _clipA, Gh3HighwayLayout.TopY, true);
-            n = Clip(_clipA, n, _clipB, Gh3HighwayLayout.TopY + Gh3HighwayLayout.Fade, false);
+            float top = _bridge.TopY;
+            int n = Clip(_quad, 4, _clipA, top, true);
+            n = Clip(_clipA, n, _clipB, top + Gh3HighwayLayout.Fade, false);
             Emit(_clipB, n, color);
-            n = Clip(_quad, 4, _clipA, Gh3HighwayLayout.TopY + Gh3HighwayLayout.Fade, true);
+            n = Clip(_quad, 4, _clipA, top + Gh3HighwayLayout.Fade, true);
             Emit(_clipA, n, color);
         }
 
@@ -169,8 +172,8 @@ namespace ClonZones
 
         private void Add(Point point, Color32 color)
         {
-            if (_fade) color.a = (byte)(color.a * Gh3HighwayLayout.AlphaAtY(point.Y));
-            _vertices[_count++] = new Vertex { Position = _bridge.World(point.X,point.Y), Color=color, UV=new Vector2(point.U,point.V) };
+            if (_fade) color.a = (byte)(color.a * _bridge.AlphaAtY(point.Y));
+            _vertices[_count++] = new Vertex { Position = _bridge.World(point.X,point.Y), Color=color, UV=new Vector2 { x=point.U, y=point.V } };
         }
 
         public unsafe void Upload()
@@ -185,8 +188,14 @@ namespace ClonZones
                 _uploadedCount = _count;
             }
             Vector3 min=_vertices[0].Position, max=min;
-            for (int i=1;i<_count;i++) { min=Vector3.Min(min,_vertices[i].Position); max=Vector3.Max(max,_vertices[i].Position); }
-            Bounds bounds = new Bounds(); bounds.SetMinMax(min,max); _mesh.bounds=bounds;
+            for (int i = 1; i < _count; i++)
+            {
+                Vector3 p = _vertices[i].Position;
+                min.x = min.x < p.x ? min.x : p.x; max.x = max.x > p.x ? max.x : p.x;
+                min.y = min.y < p.y ? min.y : p.y; max.y = max.y > p.y ? max.y : p.y;
+                min.z = min.z < p.z ? min.z : p.z; max.z = max.z > p.z ? max.z : p.z;
+            }
+            Bounds bounds = default; bounds.SetMinMax(min,max); _mesh.bounds=bounds;
         }
 
         public void Disable() { if (_renderer != null) _renderer.enabled = false; }

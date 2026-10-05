@@ -10,8 +10,10 @@
   <!-- Actual controller, script, clock and scene sources. No native engine or GPU runs here. -->
   <ItemGroup>
     <Compile Include="$(HudSourceRoot)/Gh3HudTypes.cs" />
+    <Compile Include="$(HudSourceRoot)/PresentationSettings.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudFont.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudLayout.cs" />
+    <Compile Include="$(HudSourceRoot)/WormodHudLayout.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudRules.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudElement.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudScheduler.cs" />
@@ -19,6 +21,7 @@
     <Compile Include="$(HudSourceRoot)/Gh3HudStateBridge.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudController.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudScripts.cs" />
+    <Compile Include="$(HudSourceRoot)/Gh3HudWormod.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudSpMeter.cs" />
     <Compile Include="$(HudSourceRoot)/Gh3HudFcLabel.cs" Condition="Exists('$(HudSourceRoot)/Gh3HudFcLabel.cs')" />
     <Compile Include="../Gh3HudTests/UnityStubs.cs" />

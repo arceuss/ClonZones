@@ -48,7 +48,10 @@ namespace ClonZones
         Gh3NoteProjection = 34,
         Gh3SustainUpdate = 35,
         Gh3HudUpdate = 36,
-        Count = 37
+        HudDraw = 37,
+        HudUpload = 38,
+        HudVisibility = 39,
+        Count = 40
     }
 
     internal static class ClonZonesProfiler
@@ -91,7 +94,10 @@ namespace ClonZones
             "gh3HighwayUpdate",
             "gh3NoteProjection",
             "gh3SustainUpdate",
-            "gh3HudUpdate"
+            "gh3HudUpdate",
+            "hudDraw",
+            "hudUpload",
+            "hudVisibility"
         };
 
         private static readonly long[] TotalTicks = new long[(int)ProfileScope.Count];
@@ -99,6 +105,10 @@ namespace ClonZones
         private static readonly int[] Calls = new int[(int)ProfileScope.Count];
         private static readonly long[] AllocationStart = new long[(int)ProfileScope.Count];
         private static readonly long[] AllocatedBytes = new long[(int)ProfileScope.Count];
+        // Unity's IL2CPP (Boehm) heap, sampled through il2cpp_gc_get_used_size. Boehm refills thread-local
+        // free lists in chunks, so one delta is coarse; summed over a capture it tracks allocation volume.
+        private static readonly long[] Il2CppStart = new long[(int)ProfileScope.Count];
+        private static readonly long[] Il2CppBytes = new long[(int)ProfileScope.Count];
         private static readonly StringBuilder ReportBuilder = new(2048);
 
         private static MelonLogger.Instance _log;
@@ -138,6 +148,7 @@ namespace ClonZones
             Enabled = false;
             _intervalSeconds = 5f;
             ReadSettings(assetRoot);
+            if (ClonZonesBenchmark.Enabled) Enabled = ClonZonesBenchmark.CaptureScopes;
 
             if (!Enabled)
                 return;
@@ -151,8 +162,8 @@ namespace ClonZones
         public static long BeginScope(ProfileScope scope)
         {
             if (!Enabled) return 0;
-            if (scope >= ProfileScope.Gh3HighwayUpdate)
-                AllocationStart[(int)scope] = GC.GetAllocatedBytesForCurrentThread();
+            AllocationStart[(int)scope] = GC.GetAllocatedBytesForCurrentThread();
+            Il2CppStart[(int)scope] = Il2CppInterop.Runtime.IL2CPP.il2cpp_gc_get_used_size();
             return Stopwatch.GetTimestamp();
         }
 
@@ -164,8 +175,10 @@ namespace ClonZones
 
             int index = (int)scope;
             long elapsed = Stopwatch.GetTimestamp() - startTicks;
-            if (scope >= ProfileScope.Gh3HighwayUpdate)
-                AllocatedBytes[index] += GC.GetAllocatedBytesForCurrentThread() - AllocationStart[index];
+            ClonZonesBenchmark.RecordScope(scope, elapsed);
+            AllocatedBytes[index] += GC.GetAllocatedBytesForCurrentThread() - AllocationStart[index];
+            long il2cpp = Il2CppInterop.Runtime.IL2CPP.il2cpp_gc_get_used_size() - Il2CppStart[index];
+            if (il2cpp > 0) Il2CppBytes[index] += il2cpp; // a drop is a collection, not this scope's allocation
             Calls[index]++;
             TotalTicks[index] += elapsed;
             if (elapsed > MaxTicks[index])
@@ -262,6 +275,9 @@ namespace ClonZones
         {
             if (!Enabled)
                 return;
+            // benchmark mode owns these counters for the whole session; no console reports,
+            // not even after the capture window has closed.
+            if (ClonZonesBenchmark.Configured) return;
 
             float frameMs = Time.unscaledDeltaTime * 1000f;
             _frames++;
@@ -308,11 +324,8 @@ namespace ClonZones
                 ReportBuilder.Append(avgMs.ToString("0.####", CultureInfo.InvariantCulture));
                 ReportBuilder.Append(" maxMs=");
                 ReportBuilder.Append(maxMs.ToString("0.####", CultureInfo.InvariantCulture));
-                if (i >= (int)ProfileScope.Gh3HighwayUpdate)
-                {
-                    ReportBuilder.Append(" bytes/call=");
-                    ReportBuilder.Append((calls > 0 ? (double)AllocatedBytes[i] / calls : 0.0).ToString("0.##", CultureInfo.InvariantCulture));
-                }
+                ReportBuilder.Append(" bytes/call=");
+                ReportBuilder.Append((calls > 0 ? (double)AllocatedBytes[i] / calls : 0.0).ToString("0.##", CultureInfo.InvariantCulture));
             }
 
             int restTotal = _fretRestSettledCalls + _fretRestActiveCalls;
@@ -394,12 +407,22 @@ namespace ClonZones
             System.Threading.ThreadPool.QueueUserWorkItem(_ => log.Msg(report));
         }
 
+        // Benchmark snapshots: running per-scope totals, copied without resetting them.
+        internal static void CopyCounters(int[] calls, long[] ticks, long[] bytes, long[] il2cppBytes)
+        {
+            Array.Copy(Calls, calls, Calls.Length);
+            Array.Copy(TotalTicks, ticks, TotalTicks.Length);
+            Array.Copy(AllocatedBytes, bytes, AllocatedBytes.Length);
+            Array.Copy(Il2CppBytes, il2cppBytes, Il2CppBytes.Length);
+        }
+
         private static void ResetCounters()
         {
             Array.Clear(TotalTicks, 0, TotalTicks.Length);
             Array.Clear(MaxTicks, 0, MaxTicks.Length);
             Array.Clear(Calls, 0, Calls.Length);
             Array.Clear(AllocatedBytes, 0, AllocatedBytes.Length);
+            Array.Clear(Il2CppBytes, 0, Il2CppBytes.Length);
             _frames = 0;
             _totalFrameMs = 0f;
             _maxFrameMs = 0f;

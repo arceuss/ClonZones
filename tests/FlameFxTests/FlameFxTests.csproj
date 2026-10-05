@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings><Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../PresentationSettings.cs" />
+    <Compile Include="../../FlameAssetPaths.cs" />
+    <Compile Include="../../FlameFxModel.cs" />
+    <Compile Include="../../FlameFxProjection.cs" />
+    <Compile Include="ProjectionStubs.cs" />
+    <Compile Include="Program.cs" />
+    <None Update="particle_oracle.csv" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

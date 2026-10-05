@@ -75,7 +75,7 @@ namespace ClonZones
                 float adv = c == ' ' ? SpaceWidth : GlyphFor(c).Width;
                 w += adv + post - pre;
             }
-            return new Vector2(w, LineHeight);
+            return new Vector2 { x = w, y = LineHeight };
         }
 
         /// <summary>Parses `<name>.font.txt`. Throws on any malformed line so the HUD fails closed.</summary>

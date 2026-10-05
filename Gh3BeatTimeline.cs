@@ -23,16 +23,17 @@ namespace ClonZones
         public readonly double[] PulseTimes;
         public readonly Bar[] Bars;
 
-        public Gh3BeatTimeline(double[] times, int[] weights, long[] measures, Tempo[] tempos, double resolution)
+        public Gh3BeatTimeline(double[] times, int[] weights, long[] measures, Tempo[] tempos, double resolution, double timingResolution)
         {
             PulseTimes=times;
             List<Bar> bars=new List<Bar>(times.Length);
             for (int i=0;i<times.Length;i++) bars.Add(new Bar(times[i],weights[i]));
             // The game's tick list contains measures, not one tick per rendered bar.
             // Anchor the eighth grid at each measure, including time-signature changes.
-            if (times.Length>0 && tempos.Length>0 && resolution>0)
+            if (times.Length>0 && tempos.Length>0 && resolution>0 && timingResolution>0)
             {
                 int tempoIndex=0, existing=0;
+                // playback speed changes tick-to-time conversion, not the musical tick grid.
                 double step=resolution*0.5;
                 for(int measure=0;measure<measures.Length;measure++)
                 {
@@ -41,7 +42,7 @@ namespace ClonZones
                     {
                         while(tempoIndex+1<tempos.Length && tempos[tempoIndex+1].Tick<=tick) tempoIndex++;
                         Tempo tempo=tempos[tempoIndex];
-                        double time=tempo.Time+(tick-tempo.Tick)*60.0/(tempo.Bpm*resolution);
+                        double time=tempo.Time+(tick-tempo.Tick)*60.0/(tempo.Bpm*timingResolution);
                         if(time>times[times.Length-1]) break;
                         while(existing<times.Length && times[existing]<time-1e-7) existing++;
                         if(tempo.Bpm<=180.0 && (existing>=times.Length || Math.Abs(times[existing]-time)>1e-7))

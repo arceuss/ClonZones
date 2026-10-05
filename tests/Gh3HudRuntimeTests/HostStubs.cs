@@ -1,6 +1,7 @@
 // Only the host boundary is stubbed. Gameplay snapshots are synthetic, textures/fonts
 // are placeholders, and no Unity/IL2CPP renderer or visibility flag is exercised here.
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
@@ -25,7 +26,7 @@ namespace MelonLoader
 }
 namespace UnityEngine
 {
-    public class Object {}
+    public class Object { public IntPtr m_CachedPtr = (IntPtr)1; }
     public class GameObject : Object { public int layer; }
     public struct Rect
     {
@@ -38,7 +39,13 @@ namespace UnityEngine
     }
     public class Camera : Object { public Rect pixelRect = new(0, 0, 1280, 720); public GameObject gameObject = new(); }
     public class Shader : Object { public static Shader Find(string name) => new(); }
-    public static class SortingLayer { public static int NameToID(string name) => 0; }
+    public static class SortingLayer
+    {
+        public static int[] GetSortingLayerIDsInternal() => Array.Empty<int>();
+        public static int GetLayerValueFromID(int id) => 0;
+        public static int NameToID(string name) => 0;
+        public static string IDToName(int id) => "";
+    }
     public static class Time { public static float unscaledDeltaTime, unscaledTime; }
     public static class Input
     {
@@ -46,6 +53,11 @@ namespace UnityEngine
         public static bool GetMouseButtonDown(int b) => b == 1 && RightDown;
         public static bool GetMouseButtonUp(int b) => b == 1 && RightUp;
     }
+}
+namespace Il2CppInterop.Runtime
+{
+    // Synthetic field handles for this host fixture, not evidence of the game's ABI.
+    public static class IL2CPP { public static uint il2cpp_field_get_offset(IntPtr field) => (uint)field.ToInt64(); }
 }
 namespace Il2Cpp
 {
@@ -60,6 +72,53 @@ namespace Il2Cpp
         public double songTime;
         public bool isPaused, isSongPlaying = true, isSongOver;
         public int actualPlayerCount = 1;
+        public double songLength = 300, practiceStartTime;
+        public int practiceSectionStart;
+        public long practiceStartTick, practiceEndTick;
+        public StarProgress starProgress = new();
+        public ScoreManager scoreManager;
+        public GameManager() { scoreManager = new ScoreManager { starProgress = starProgress }; }
+        public static readonly IntPtr NativeFieldInfoPtr_starProgress = (IntPtr)0x40;
+        public static readonly IntPtr NativeFieldInfoPtr_scoreManager = (IntPtr)0xB8;
+        public static readonly IntPtr NativeFieldInfoPtr_songLength = (IntPtr)0x50;
+        public static readonly IntPtr NativeFieldInfoPtr_practiceStartTime = (IntPtr)0xD0;
+        public static readonly IntPtr NativeFieldInfoPtr_practiceSectionStart = (IntPtr)0xC8;
+        public static readonly IntPtr NativeFieldInfoPtr_practiceStartTick = (IntPtr)0xE0;
+        public static readonly IntPtr NativeFieldInfoPtr_practiceEndTick = (IntPtr)0xF0;
+    }
+    public class ScoreManager : NativeObject
+    {
+        public StarProgress starProgress;
+        public static readonly IntPtr NativeFieldInfoPtr_starProgress = (IntPtr)0x90;
+    }
+    public class StarProgress : NativeObject
+    {
+        // 7 is the .ctor terminal (0x1802E0990); -1 fraction is its pre-update sentinel.
+        public int field_Private_Int32_0, field_Private_Int32_1 = 7;
+        public float field_Private_Single_4;
+        public static readonly IntPtr NativeFieldInfoPtr_field_Private_Int32_0 = (IntPtr)0x58;
+        public static readonly IntPtr NativeFieldInfoPtr_field_Private_Int32_1 = (IntPtr)0x5C;
+        public static readonly IntPtr NativeFieldInfoPtr_field_Private_Single_4 = (IntPtr)0x78;
+    }
+    public class Object2PublicBoSiInSiDoStSiStStUnique
+    {
+        public bool prop_Boolean_0;
+    }
+    public static class ObjectPublicAbstractSealedBoObObObObObObObObObUnique
+    {
+        public static Object2PublicBoSiInSiDoStSiStStUnique field_Public_Static_Object2PublicBoSiInSiDoStSiStStUnique_27 = new();
+    }
+    public class LeaderboardsOnlineManager : NativeObject
+    {
+        public static LeaderboardsOnlineManager instance = new();
+        public bool field_Private_Boolean_0;
+        public static bool prop_Boolean_1 => instance.field_Private_Boolean_0;
+    }
+    public class GlobalVariables : NativeObject
+    {
+        public static GlobalVariables instance = new();
+        public bool isPracticeEnabled;
+        public static readonly IntPtr NativeFieldInfoPtr_isPracticeEnabled = (IntPtr)0x72;
     }
     public class ObjectPublicAbstractDoBoDoInBoObDoInSiBoUnique : NativeObject
     {
@@ -83,15 +142,48 @@ namespace Il2Cpp
 }
 namespace ClonZones
 {
-    internal static class Gh3HudAssets
+    internal enum BenchmarkEvent { HudRebuild = 1 }
+    internal static class ClonZonesBenchmark
     {
-        public static bool IsComplete => true;
-        public static string MissingSummary => "";
-        public static object Atlas => null;
-        public static Gh3HudRegion Region(string name) => new(128, 128, 0, 0, 1, 1);
+        public static void RecordSongTime(double songTime) {}
+        public static void Mark(BenchmarkEvent kind) {}
+    }
+    internal enum ProfileScope { HudDraw, HudUpload, HudVisibility }
+    internal static class ClonZonesProfiler
+    {
+        public static long BeginScope(ProfileScope scope) => 0;
+        public static void EndScope(ProfileScope scope, long start) {}
+    }
+    // the host fixture has no IL2CPP heap; the real UnityIcalls only replaces boxing invokes.
+    internal static class UnityIcalls
+    {
+        public static float UnscaledDeltaTime => UnityEngine.Time.unscaledDeltaTime;
+        public static bool MouseButtonDown(int button) => UnityEngine.Input.GetMouseButtonDown(button);
+        public static bool MouseButtonUp(int button) => UnityEngine.Input.GetMouseButtonUp(button);
+    }
+    internal sealed class Gh3HudAssets : IDisposable
+    {
+        public static readonly string[] ImageNames = Array.Empty<string>();
+        public static readonly string[] FontNames = Array.Empty<string>();
+        public bool IsComplete { get; private set; } = true;
+        public string MissingSummary { get; } = "";
+        public object Atlas { get; } = null;
+        public PresentationStyle Style { get; }
+        public string AssetRoot { get; }
+        public long Generation { get; }
+
+        public Gh3HudAssets(PresentationStyle style, string assetRoot, long generation,
+            IReadOnlyList<string> imageNames, IReadOnlyList<string> fontNames,
+            MelonLoader.MelonLogger.Instance log)
+        {
+            Style = style; AssetRoot = assetRoot; Generation = generation;
+        }
+
+        public Gh3HudRegion Region(string name) => new(128, 128, 0, 0, 1, 1);
         private static readonly Gh3HudFont StubFont = Gh3HudFont.Parse("test-only",
             "page 64 64\nlineheight 35\nspacewidth 4\nyorigin 0\npre 0\npost 0\nglyph 0 0 0 23 30 0 0 0\n", 64, 64);
-        public static Gh3HudFont Font(string name) => StubFont;
+        public Gh3HudFont Font(string name) => StubFont;
+        public void Dispose() { IsComplete = false; }
     }
     internal sealed class Gh3HudMesh : IGh3HudQuadSink, IDisposable
     {
@@ -99,7 +191,7 @@ namespace ClonZones
         public bool ProjectionDirty;
         public int Uploads;
         public Rect Viewport { get; private set; }
-        public Gh3HudMesh(string name, object atlas, Shader shader, Camera camera, int layer, int sorting, int order, int queue, int quads)
+        public Gh3HudMesh(string name, object atlas, Shader shader, Camera camera, int layer, int sorting, int order, int queue, int quads, Shader additiveShader = null)
         { _camera = camera; }
         public bool RefreshViewport()
         {
@@ -107,7 +199,7 @@ namespace ClonZones
             Viewport = _camera.pixelRect; ProjectionDirty = false; return changed;
         }
         public void Begin() {}
-        public void Quad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, float u0, float v0, float u1, float v1, Color32 color) {}
+        public void Quad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, float u0, float v0, float u1, float v1, Color32 color, Gh3HudBlend blend = Gh3HudBlend.Alpha) {}
         public void Upload() { Uploads++; }
         public void Dispose() {}
     }

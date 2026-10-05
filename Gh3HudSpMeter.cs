@@ -10,10 +10,11 @@ namespace ClonZones
         /// UpdateSPMeter (0x4230F0), instruction-verified per-bulb writes. Each bulb
         /// consumes one unit of the 0..100 amount in order (boundary inclusive-full). The
         /// visible fill is the `tube` child's scale (0.8 * small_bulb_scale wide, 3 * f
-        /// tall, as multipliers of its authored dims) plus the `full` child's alpha f; the
-        /// tube child's alpha is never written. Rising edges stamp `old_alpha` = f on the
-        /// full child and re-arm both timers at 0 ms (which also ends a running readiness
-        /// pulse morph); draining edges only write the alpha target.
+        /// tall, absolute multipliers of its 64x16 texture size on big and small bulbs
+        /// alike) plus the `full` child's alpha f; the tube child's alpha is never
+        /// written. Rising edges stamp `old_alpha` = f on the full child and re-arm both
+        /// timers at 0 ms (which also ends a running readiness pulse morph); draining
+        /// edges only write the alpha target.
         /// </summary>
         private void UpdateSpMeter(float amount)
         {
@@ -48,7 +49,9 @@ namespace ClonZones
                         _fullOldAlpha[i] = f;
                     }
                 }
-                remaining = Mathf.Max(0f, remaining - BulbUnit);
+                // Mathf.Max is maxss (a > b ? a : b, NaN keeps b) in GameAssembly; the interop call boxes.
+                float next = remaining - BulbUnit;
+                remaining = 0f > next ? 0f : next;
             }
         }
     }

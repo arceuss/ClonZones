@@ -50,6 +50,14 @@ namespace ClonZones
         private static int _disabledBridgeFrame = -1;
         private static int _currentUnityFrame = -1;
 
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void RendererUpdateNativeDelegate(IntPtr renderer, IntPtr methodInfo);
+        private static readonly RendererUpdateNativeDelegate RendererUpdateDetour = RendererUpdateNative;
+        private static NativeHook<RendererUpdateNativeDelegate> _rendererUpdateHook;
+        private static int _shuffleOffset, _noteSeedOffset;
+        private static bool _shuffleHeads;
+        public static bool ColorShuffleReady { get; private set; }
+
         private static readonly string[] LaneNames = { "green", "red", "yellow", "blue", "orange" };
 
         // Precomputed note-head frame arrays. SetupState is the hottest note path,
@@ -194,6 +202,8 @@ namespace ClonZones
                 return;
             }
 
+            if (!InstallRendererColorContext(log)) return;
+
             // SetupState fires per visible note per rendered frame (tens of thousands
             // of calls per second in dense charts). Each Harmony crossing marshals the
             // note into a fresh managed wrapper, which is pure GC churn; prefer a
@@ -317,6 +327,52 @@ namespace ClonZones
             return (int)Il2CppInterop.Runtime.IL2CPP.il2cpp_field_get_offset(fieldInfoPtr);
         }
 
+        private static bool InstallRendererColorContext(MelonLogger.Instance log)
+        {
+            try
+            {
+                Type renderer = typeof(GuitarNoteRenderer).BaseType;
+                _shuffleOffset = GetNativeFieldOffset(renderer.BaseType, "NativeFieldInfoPtr_field_Protected_Boolean_1");
+                _noteSeedOffset = GetNativeFieldOffset(typeof(ObjectPublicObInObDoSiDoUIInBoInUnique),
+                    "NativeFieldInfoPtr_field_Public_Int32_0");
+                if (_shuffleOffset != 0x108 || _noteSeedOffset != 0x20)
+                    throw new NotSupportedException($"Guitar shuffle fields differ: flag={_shuffleOffset:X}, seed={_noteSeedOffset:X}.");
+                MethodInfo method = AccessTools.Method(renderer, "Update");
+                if (method == null) throw new MissingMethodException("Guitar renderer Update is missing.");
+                FieldInfo field = Il2CppInteropUtils.GetIl2CppMethodInfoPointerFieldForGeneratedMethod(method);
+                IntPtr info = field == null ? IntPtr.Zero : (IntPtr)field.GetValue(null);
+                IntPtr target = info == IntPtr.Zero ? IntPtr.Zero : Marshal.ReadIntPtr(info);
+                if (target == IntPtr.Zero) throw new MissingMethodException("Guitar renderer Update has no native binding.");
+                _rendererUpdateHook = new NativeHook<RendererUpdateNativeDelegate>(target,
+                    Marshal.GetFunctionPointerForDelegate(RendererUpdateDetour));
+                _rendererUpdateHook.Attach();
+                ColorShuffleReady = true;
+                return true;
+            }
+            catch (Exception error)
+            {
+                _rendererUpdateHook?.Detach();
+                _rendererUpdateHook = null;
+                log.Error($"[ClonZones] Guitar color context failed; native note heads retained: {error}");
+                return false;
+            }
+        }
+
+        private static void RendererUpdateNative(IntPtr renderer, IntPtr methodInfo)
+        {
+            bool previous = _shuffleHeads;
+            _shuffleHeads = Marshal.ReadByte(renderer, _shuffleOffset) != 0;
+            // The compiler outlines head drawing and inlines the color resolver. Update still brackets SetupState.
+            try { _rendererUpdateHook.Trampoline(renderer, methodInfo); }
+            finally { _shuffleHeads = previous; }
+        }
+
+        private static int ResolveHeadColor(int lane, int nativeColor, IntPtr note)
+        {
+            if (!_shuffleHeads || note == IntPtr.Zero || (uint)lane > 5) return nativeColor;
+            return GuitarNoteColor.Resolve(lane, lane == 0 ? 0 : Marshal.ReadInt32(note, _noteSeedOffset), true);
+        }
+
         private static int ReadNoteFlags(IntPtr note)
         {
             return _noteFlagsSize switch
@@ -413,7 +469,8 @@ namespace ClonZones
                     }
                 }
 
-                ProcessSetupState(lanePos, colorPos, hasNote, noteMask, noteFlags, noteIndex, isSPActive != 0, hitTime);
+                ProcessSetupState(lanePos, ResolveHeadColor(lanePos, colorPos, note), hasNote,
+                    noteMask, noteFlags, noteIndex, isSPActive != 0, hitTime);
             }
             catch
             {
@@ -485,7 +542,7 @@ namespace ClonZones
             bool hasNote = !ReferenceEquals(note, null);
             ushort noteMask = hasNote ? note.field_Public_UInt16_0 : (ushort)0;
             int noteFlags = hasNote ? (int)note.field_Public_EnumNPublicSealedvaNoChDiExChHoStTaSoUnique_0 : 0;
-            ProcessSetupState(__1, __2, hasNote, noteMask, noteFlags, __4, __5,
+            ProcessSetupState(__1, ResolveHeadColor(__1, __2, hasNote ? note.Pointer : IntPtr.Zero), hasNote, noteMask, noteFlags, __4, __5,
                 hasNote ? note.field_Public_Double_0 : double.NaN);
         }
 
@@ -783,9 +840,11 @@ namespace ClonZones
 
         private static void CacheAnimationFrameForCurrentUnityFrame()
         {
-            _currentUnityFrame = Time.frameCount;
+            _currentUnityFrame = UnityIcalls.FrameCount;
             _cachedAnimationUnityFrame = _currentUnityFrame;
-            _cachedAnimationFrame = Mathf.FloorToInt(Time.time * PhraseAnimationFps);
+            // Mathf.FloorToInt is cvttsd2si(Math.Floor((double)f)) in GameAssembly; conv.i4 is the
+            // same cvttsd2si on this net6 x64 runtime, without the boxed runtime_invoke.
+            _cachedAnimationFrame = (int)Math.Floor((double)(UnityIcalls.Time * PhraseAnimationFps));
         }
 
         private static bool IsOpenMask(ushort noteMask) => (noteMask & 0x0001) != 0;

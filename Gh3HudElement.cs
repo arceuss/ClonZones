@@ -54,10 +54,12 @@ namespace ClonZones
         public readonly int Order;       // construction order: z tie-break
         public bool IsContainer;
         public bool Alive = true;        // DestroyScreenElement
+        internal int SceneIndex = -1;    // slot in the owning scene's element list; not Order
 
         // Sprite
         public string TextureName;
         public Gh3HudRegion Region;
+        public Gh3HudBlend Blend = Gh3HudBlend.Alpha;
         public Vector2 Dims;             // logical dims in parent-local units before Scale
         // Text
         public Gh3HudFont Font;
@@ -83,6 +85,9 @@ namespace ClonZones
         private int _durationMs;
         private Gh3Motion _mode = Gh3Motion.Linear;
         private bool _dirty;
+        private int _rotationBits;
+        private bool _rotationCached;
+        private float _rotationCos, _rotationSin;
 
         public Gh3HudElement(string id, Gh3HudElement parent, int order)
         {
@@ -100,13 +105,33 @@ namespace ClonZones
         public void SetRot(float degrees) { Rot = RotTarget = RotStart = degrees; }
         public void SetRgba(Color32 rgba) { Rgba = RgbaTarget = RgbaStart = rgba; }
 
+        internal void RotationTrig(float degrees, out float cos, out float sin)
+        {
+            float radians = degrees * Mathf.Deg2Rad;
+            int bits = BitConverter.SingleToInt32Bits(radians);
+            // keep the native results and distinguish sin(-0) from sin(+0).
+            if (!_rotationCached || bits != _rotationBits)
+            {
+                float nextCos = Mathf.Cos(radians), nextSin = Mathf.Sin(radians);
+                _rotationCos = nextCos; _rotationSin = nextSin;
+                _rotationBits = bits; _rotationCached = true;
+            }
+            cos = _rotationCos; sin = _rotationSin;
+        }
+
         public void SetText(string text)
         {
             TextLength = Math.Min(text.Length, Text.Length);
             for (int i = 0; i < TextLength; i++) Text[i] = text[i];
         }
-        /// <summary>method_4FBBA0 with a3 = 0: write the target alpha only and mark dirty; the timer decides when it shows.</summary>
-        public void SetTargetAlpha(float alpha) { AlphaTarget = alpha; _dirty = true; }
+        // 0x4FBBA0, a3=0: a changed target captures current alpha, but doesn't re-arm the timer.
+        public void SetTargetAlpha(float alpha)
+        {
+            if (alpha == AlphaTarget) return;
+            AlphaStart = Alpha;
+            AlphaTarget = alpha;
+            _dirty = true;
+        }
 
         /// <summary>sub_55B260 on its own: re-arm the shared timer without naming a channel (a running morph completes at once when seconds == 0).</summary>
         public void ArmTimer(float seconds, long nowMs)
@@ -193,13 +218,13 @@ namespace ClonZones
             if (!_dirty) return;
             if (MorphDone(nowMs)) { SnapCurrent(); return; }
             float k = Eased(nowMs);
-            Pos = PosStart + (PosTarget - PosStart) * k;
+            Pos = new Vector2 { x = PosStart.x + (PosTarget.x - PosStart.x) * k, y = PosStart.y + (PosTarget.y - PosStart.y) * k };
             Alpha = AlphaStart + (AlphaTarget - AlphaStart) * k;
-            Scale = ScaleStart + (ScaleTarget - ScaleStart) * k;
+            Scale = new Vector2 { x = ScaleStart.x + (ScaleTarget.x - ScaleStart.x) * k, y = ScaleStart.y + (ScaleTarget.y - ScaleStart.y) * k };
             Rot = RotStart + (RotTarget - RotStart) * k;
-            Rgba = new Color32(
-                LerpByte(RgbaStart.r, RgbaTarget.r, k), LerpByte(RgbaStart.g, RgbaTarget.g, k),
-                LerpByte(RgbaStart.b, RgbaTarget.b, k), LerpByte(RgbaStart.a, RgbaTarget.a, k));
+            Rgba = new Color32 {
+                r = LerpByte(RgbaStart.r, RgbaTarget.r, k), g = LerpByte(RgbaStart.g, RgbaTarget.g, k),
+                b = LerpByte(RgbaStart.b, RgbaTarget.b, k), a = LerpByte(RgbaStart.a, RgbaTarget.a, k) };
         }
 
         // Native lerps the bytes in float and truncates back ((int)(float)).

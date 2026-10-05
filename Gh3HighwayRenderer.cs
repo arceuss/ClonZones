@@ -157,7 +157,8 @@ namespace ClonZones
                 var tempo=nativeTempos[i];
                 tempos[i]=new Gh3BeatTimeline.Tempo(tempo.field_Public_Int64_0,tempo.field_Public_Double_1,tempo.field_Public_Double_0);
             }
-            _timeline=new Gh3BeatTimeline(times,weights,measures,tempos,song.field_Public_Double_0);
+            // CH 1.1.0.6142 keeps chart resolution in Double_1; Double_0 includes song speed.
+            _timeline=new Gh3BeatTimeline(times,weights,measures,tempos,song.field_Public_Double_1,song.field_Public_Double_0);
             _window=(notes.noteZPosFarLimit-notes.strikeLine)/notes.noteSpeed;
             if(HighwaySpriteBank.Small != null)
             {
@@ -216,17 +217,17 @@ namespace ClonZones
             for(int i=0;i<_nativeBars.Length;i++)
             {
                 NativeBar bar=_nativeBars[i]; int index=first+i;
-                if(index>=_timeline.PulseTimes.Length || !bar.Object.activeSelf) break;
+                if(index>=_timeline.PulseTimes.Length || !UnityIcalls.ActiveSelf(bar.Object)) break;
                 int weight=_weights[index];
-                if(weight<0 || weight>=BarArt.Length || BarArt[weight] == null) continue;
+                if(weight<0 || weight>=BarArt.Length || !UnityIcalls.Alive(BarArt[weight])) continue;
                 if(weight!=bar.LastWeight) { bar.Renderer.sprite=BarArt[weight]; bar.LastWeight=weight; }
                 float y=_bridge.TimeY(_timeline.PulseTimes[index]-now);
                 float scale=Gh3HighwayLayout.BarScale(y);
-                bar.Transform.position=_bridge.World(Gh3HighwayLayout.CenterX,y);
-                bar.Transform.rotation=_bridge.Rotation;
+                UnityIcalls.SetPosition(bar.Transform,_bridge.World(Gh3HighwayLayout.CenterX,y));
+                UnityIcalls.SetRotation(bar.Transform,_bridge.Rotation);
                 Vector2 pixel=_bridge.PixelWorldSize;
-                bar.Transform.localScale=new Vector3(pixel.x*scale/bar.ParentScale.x,pixel.y*scale/bar.ParentScale.y,1f);
-                bar.Renderer.color=new Color(1f,1f,1f,Gh3HighwayLayout.AlphaAtY(y));
+                UnityIcalls.SetLocalScale(bar.Transform,new Vector3{ x=pixel.x*scale/bar.ParentScale.x, y=pixel.y*scale/bar.ParentScale.y, z=1f });
+                bar.Renderer.color=new Color{ r=1f, g=1f, b=1f, a=_bridge.AlphaAtY(y) };
             }
             if(_eighths == null) return;
             _eighths.Begin();
@@ -245,13 +246,20 @@ namespace ClonZones
 
         private void DrawStatic(bool layoutChanged)
         {
+            float topY=_bridge.TopY;
+            // extend along the authored rays, without changing their angle or near anchors.
+            // Mathf.Max(a,b) is maxss (a > b ? a : b) in GameAssembly; the interop call boxes.
+            float stringRatio=(Gh3HighwayLayout.Playline-topY)/Gh3HighwayLayout.Height;
+            float sideRatio=(742.5f-topY)/(742.5f-Gh3HighwayLayout.TopY);
+            float stringLengthScale=1f > stringRatio ? 1f : stringRatio;
+            float sideLengthScale=1f > sideRatio ? 1f : sideRatio;
             if(layoutChanged && _strings != null)
             {
                 _strings.Begin();
                 for(int lane=0;lane<5;lane++)
                 {
                     float top=Gh3HighwayLayout.LaneX(lane,305f), bottom=Gh3HighwayLayout.LaneX(lane,655f);
-                    _strings.Strip(bottom,655f,top-bottom,-350f,_stringHeight*.8f,_stringWidth*.65000004f,false,new Color32(200,200,200,200));
+                    _strings.Strip(bottom,655f,top-bottom,-350f,_stringHeight*.8f*stringLengthScale,_stringWidth*.65000004f,false,new Color32(200,200,200,200));
                 }
                 _strings.Upload();
             }
@@ -260,16 +268,16 @@ namespace ClonZones
                 byte red=(byte)(_pulse>0 && (_pulse&1)==0 ? 192 : 255);
                 _sides.Begin();
                 _sides.Strip(336f,742.5f,176f,-350f,_sideHeight,_sideWidth*.3f,false,new Color32(red,255,255,255),
-                    _sideCoverage.x,_sideCoverage.y);
+                    _sideCoverage.x,_sideCoverage.y,sideLengthScale);
                 _sides.Strip(944f,742.5f,-176f,-350f,_sideHeight,_sideWidth*.3f,true,new Color32(red,255,255,255),
-                    _sideCoverage.x,_sideCoverage.y);
+                    _sideCoverage.x,_sideCoverage.y,sideLengthScale);
                 _sides.Upload();
             }
             if(!layoutChanged || _markerMesh == null) return;
             _markerMesh.Begin();
             _markerMesh.Bar(655f,512f,1f,new Color32(0,255,0,255));
-            _markerMesh.Bar(305f,160f,1f,new Color32(255,0,0,255));
-            _markerMesh.Strip(640f,655f,0f,-1f,350f,1f,false,new Color32(255,255,0,255));
+            _markerMesh.Bar(topY,Gh3HighwayLayout.WidthAtY(topY),1f,new Color32(255,0,0,255));
+            _markerMesh.Strip(640f,655f,0f,-1f,Gh3HighwayLayout.Playline-topY,1f,false,new Color32(255,255,0,255));
             _markerMesh.Upload();
         }
 

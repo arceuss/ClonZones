@@ -38,8 +38,8 @@ namespace ClonZones
             }
         }
 
-        public static int Misses(BasePlayer player) => player != null && Players.TryGetValue(player.Pointer, out Counts c) ? c.Misses : 0;
-        public static int Ghosts(BasePlayer player) => player != null && Players.TryGetValue(player.Pointer, out Counts c) ? c.Ghosts : 0;
+        public static int Misses(BasePlayer player) => UnityIcalls.Alive(player) && Players.TryGetValue(player.Pointer, out Counts c) ? c.Misses : 0;
+        public static int Ghosts(BasePlayer player) => UnityIcalls.Alive(player) && Players.TryGetValue(player.Pointer, out Counts c) ? c.Ghosts : 0;
 
         public static void Clear() { Players.Clear(); _logged = 0; }
     }

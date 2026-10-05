@@ -134,6 +134,11 @@ namespace ClonZones
             public bool BaseLipOverlayApplied;
             public bool HeadOverlayApplied;
             public bool LiftOverlayApplied;
+            // NoteFX reads the lip anchor every frame; renderer.transform hands out a fresh
+            // unrooted wrapper each time. A component's transform never changes, so key the
+            // cached one on the renderer wrapper it came from.
+            public SpriteRenderer LipAnchorRenderer;
+            public Transform LipAnchorTransform;
         }
 
         private sealed class FretOverlayCache
@@ -316,7 +321,7 @@ namespace ClonZones
                     && FretSpriteBank.IsReady
                     && VisualCaches.TryGetValue(instance, out visual)
                     && IsVisualCacheAlive(visual)
-                    && visual.FretAnimator != null)
+                    && UnityIcalls.Alive(visual.FretAnimator))
                 {
                     if (visual.SettledApplied && IsFretSettled(visual.FretAnimator, visual))
                     {
@@ -400,7 +405,7 @@ namespace ClonZones
 
         private static void PlayPostfix(object __instance, bool __0, bool __1)
         {
-            float now = Time.time;
+            float now = UnityIcalls.Time;
             // Every GuitarFretAnimator.Play() represents a vanilla fret pop, including
             // the song-start BeginningAnimation which calls Play(false, false) directly
             // one fret at a time instead of routing through GuitarNeckController.PlayFret.
@@ -487,7 +492,7 @@ namespace ClonZones
         private static bool IsFretSettled(object instance, FretVisualCache visual)
         {
             var state = ReadFretRuntimeState(instance, visual);
-            return IsFretSettled(visual, state, Time.time, sampleMotion: true);
+            return IsFretSettled(visual, state, UnityIcalls.Time, sampleMotion: true);
         }
 
         private static bool IsFretSettled(FretVisualCache visual, FretRuntimeState state, float now, bool sampleMotion)
@@ -517,13 +522,13 @@ namespace ClonZones
                     return true;
 
                 var headTransform = visual.HeadTransform;
-                if (headTransform == null)
+                if (!UnityIcalls.Alive(headTransform))
                 {
                     ClonZonesProfiler.RecordFretSettleBlocker(false, state.IsSustaining, state.OpenNoteSustaining, false, false, false);
                     return false;
                 }
 
-                float headY = headTransform.localPosition.y;
+                float headY = UnityIcalls.LocalPosition(headTransform).y;
                 bool steady = visual.HasPrefixHeadY && visual.LastPrefixHeadY == headY;
                 visual.LastPrefixHeadY = headY;
                 visual.HasPrefixHeadY = true;
@@ -549,10 +554,10 @@ namespace ClonZones
                 return false;
 
             var headTransform = visual.HeadTransform;
-            if (headTransform == null)
+            if (!UnityIcalls.Alive(headTransform))
                 return false;
 
-            float dy = headTransform.localPosition.y - visual.IdleHeadLocalPosition.y;
+            float dy = UnityIcalls.LocalPosition(headTransform).y - visual.IdleHeadLocalPosition.y;
             return dy <= 0.001f && dy >= -0.0015f;
         }
 
@@ -592,7 +597,7 @@ namespace ClonZones
                 return;
             }
 
-            float now = Time.time;
+            float now = UnityIcalls.Time;
             ExpireManualOpenPopIfNeeded(visual, now);
             bool timerPopActive = visual.ManualOpenPopUntil > now || visual.LitUntil > now;
             bool headAboveIdle = !timerPopActive && IsHeadAboveIdle(visual);
@@ -651,6 +656,30 @@ namespace ClonZones
             ClonZonesProfiler.EndScope(activeApply ? ProfileScope.FretApplyActive : ProfileScope.FretApplyIdle, splitProfile);
 
             ClonZonesProfiler.EndScope(ProfileScope.FretApply, profile);
+        }
+
+        internal static bool TryGetLipBottomAnchor(BaseFretAnimator animator, out Vector3 anchor)
+        {
+            anchor = default;
+            if (!TryGetVisualCache(animator, out FretVisualCache visual)) return false;
+            SpriteRenderer renderer = _useOverlayRenderers ? visual.Overlay?.HalfCoverRenderer : visual.HalfCoverRenderer;
+            if (!UnityIcalls.Alive(renderer)) return false;
+            IntPtr sprite = UnityIcalls.SpritePtr(renderer);
+            if (!UnityIcalls.AlivePtr(sprite)) return false;
+            if (!ReferenceEquals(visual.LipAnchorRenderer, renderer))
+            {
+                visual.LipAnchorTransform = renderer.transform;
+                visual.LipAnchorRenderer = renderer;
+            }
+            // Native guitar_highway.q gives the lip and NoteFX the same bottom
+            // anchor. Account for our fret sprite pivot without moving the fret.
+            Vector2 pivot = UnityIcalls.SpritePivot(sprite);
+            float pixelsPerUnit = UnityIcalls.SpritePixelsPerUnit(sprite);
+            Vector3 local = default;
+            local.x = (UnityIcalls.SpriteRect(sprite).m_Width * .5f - pivot.x) / pixelsPerUnit;
+            local.y = -pivot.y / pixelsPerUnit;
+            anchor = UnityIcalls.TransformPoint(visual.LipAnchorTransform, local);
+            return true;
         }
 
         private static bool TryGetVisualCache(object instance, out FretVisualCache visual)
@@ -719,10 +748,10 @@ namespace ClonZones
         private static bool IsVisualCacheAlive(FretVisualCache visual)
         {
             return visual != null
-                   && (visual.BaseRenderer != null
-                       || visual.HeadRenderer != null
-                       || visual.HalfCoverRenderer != null
-                       || visual.LiftRenderer != null);
+                   && (UnityIcalls.Alive(visual.BaseRenderer)
+                       || UnityIcalls.Alive(visual.HeadRenderer)
+                       || UnityIcalls.Alive(visual.HalfCoverRenderer)
+                       || UnityIcalls.Alive(visual.LiftRenderer));
         }
 
         private static FretOverlayCache BuildOverlayCache(FretVisualCache visual)
@@ -816,10 +845,10 @@ namespace ClonZones
                 return;
 
             var headTransform = visual.HeadTransform;
-            if (headTransform == null)
+            if (!UnityIcalls.Alive(headTransform))
                 return;
 
-            var current = headTransform.localPosition;
+            var current = UnityIcalls.LocalPosition(headTransform);
             var idle = visual.IdleHeadLocalPosition;
             if (Math.Abs(current.x - idle.x) > 0.0001f
                 || Math.Abs(current.y - idle.y) > 0.0001f
@@ -835,7 +864,7 @@ namespace ClonZones
             // Vanilla Pressed()/Released() write BaseFretAnimator state. Keep that
             // as the only source so ClonZones cannot drift from CH input state.
             var fretAnimator = visual?.FretAnimator ?? instance as BaseFretAnimator;
-            if (fretAnimator != null)
+            if (UnityIcalls.Alive(fretAnimator))
                 return new FretRuntimeState(fretAnimator.isHeld, fretAnimator.isSustaining, fretAnimator.openNoteSustaining);
 
             bool isHeld = TryGetBool(instance, "isHeld", out bool held) && held;
@@ -917,7 +946,7 @@ namespace ClonZones
                 return false;
 
             var headTransform = visual.HeadTransform;
-            if (headTransform == null)
+            if (!UnityIcalls.Alive(headTransform))
                 return false;
 
             float duration = Math.Max(0.0001f, visual.ManualOpenPopUntil - visual.ManualOpenPopStart);
@@ -927,7 +956,7 @@ namespace ClonZones
             var popPosition = visual.IdleHeadLocalPosition;
             popPosition.y += visual.ManualOpenPopDelta * normalized;
 
-            var current = headTransform.localPosition;
+            var current = UnityIcalls.LocalPosition(headTransform);
             if (Math.Abs(current.x - popPosition.x) > 0.0001f
                 || Math.Abs(current.y - popPosition.y) > 0.0001f
                 || Math.Abs(current.z - popPosition.z) > 0.0001f)
@@ -965,7 +994,7 @@ namespace ClonZones
                 return false;
 
             var headTransform = visual.HeadTransform;
-            return headTransform != null && headTransform.localPosition.y > visual.IdleHeadLocalPosition.y + 0.001f;
+            return UnityIcalls.Alive(headTransform) && UnityIcalls.LocalPosition(headTransform).y > visual.IdleHeadLocalPosition.y + 0.001f;
         }
 
         private static bool IsFretMaskAffected(object instance, ushort changedButtons)
@@ -991,7 +1020,7 @@ namespace ClonZones
 
         private static bool SetRendererSprite(SpriteRenderer renderer, Sprite sprite, bool force = false)
         {
-            if (renderer == null || sprite == null)
+            if (!UnityIcalls.Alive(renderer) || !UnityIcalls.Alive(sprite))
                 return false;
 
             if (force)
@@ -1001,8 +1030,8 @@ namespace ClonZones
                 return true;
             }
 
-            var current = renderer.sprite;
-            if (ReferenceEquals(current, null) || current.Pointer != sprite.Pointer)
+            // raw pointer compare: renderer.sprite would hand back a pooled wrapper just to read .Pointer.
+            if (UnityIcalls.SpritePtr(renderer) != sprite.Pointer)
             {
                 renderer.sprite = sprite;
                 ClonZonesProfiler.RecordFretSpriteWrite();
@@ -1032,7 +1061,7 @@ namespace ClonZones
 
         private static void NormalizeRendererVisuals(SpriteRenderer renderer, bool force = false)
         {
-            if (renderer == null)
+            if (!UnityIcalls.Alive(renderer))
                 return;
 
             if (force)
@@ -1059,7 +1088,7 @@ namespace ClonZones
                 ClonZonesProfiler.RecordFretNormalizeWrite();
             }
 
-            var color = renderer.color;
+            var color = UnityIcalls.SpriteRendererColor(renderer);
             if (Math.Abs(color.r - 1f) > 0.0001f
                 || Math.Abs(color.g - 1f) > 0.0001f
                 || Math.Abs(color.b - 1f) > 0.0001f
@@ -1116,15 +1145,17 @@ namespace ClonZones
 
         private static int GetFretAnimationFrame()
         {
-            return Mathf.FloorToInt(Time.time * FretAnimationFps);
+            // Mathf.FloorToInt is cvttsd2si(Math.Floor((double)f)) in GameAssembly; conv.i4 is the
+            // same cvttsd2si on this net6 x64 runtime, without the boxed runtime_invoke.
+            return (int)Math.Floor((double)(UnityIcalls.Time * FretAnimationFps));
         }
 
         private static void SetOverlaySprite(SpriteRenderer renderer, ref Sprite lastSprite, Sprite sprite)
         {
-            if (renderer == null || sprite == null)
+            if (!UnityIcalls.Alive(renderer) || !UnityIcalls.Alive(sprite))
                 return;
 
-            if (lastSprite == null || lastSprite.Pointer != sprite.Pointer)
+            if (!UnityIcalls.Alive(lastSprite) || lastSprite.Pointer != sprite.Pointer)
             {
                 renderer.sprite = sprite;
                 lastSprite = sprite;
@@ -1149,7 +1180,7 @@ namespace ClonZones
         {
             var overlay = visual?.Overlay;
             var renderer = overlay?.HeadRenderer;
-            if (renderer == null || targetHeadSprite == null)
+            if (!UnityIcalls.Alive(renderer) || !UnityIcalls.Alive(targetHeadSprite))
                 return false;
 
             if (!visual.HeadOverlayApplied)
@@ -1159,7 +1190,7 @@ namespace ClonZones
                 visual.HeadOverlayApplied = true;
             }
 
-            if (overlay.LastHeadSprite == null || overlay.LastHeadSprite.Pointer != targetHeadSprite.Pointer)
+            if (!UnityIcalls.Alive(overlay.LastHeadSprite) || overlay.LastHeadSprite.Pointer != targetHeadSprite.Pointer)
             {
                 renderer.sprite = targetHeadSprite;
                 overlay.LastHeadSprite = targetHeadSprite;
@@ -1173,7 +1204,7 @@ namespace ClonZones
         {
             var overlay = visual?.Overlay;
             var renderer = overlay?.LiftRenderer;
-            if (renderer == null)
+            if (!UnityIcalls.Alive(renderer))
                 return false;
 
             if (!visual.LiftOverlayApplied)
@@ -1193,7 +1224,7 @@ namespace ClonZones
 
         private static void SetOverlayRendererVisible(SpriteRenderer renderer, bool visible)
         {
-            if (renderer == null)
+            if (!UnityIcalls.Alive(renderer))
                 return;
 
             renderer.enabled = visible;
@@ -1271,7 +1302,7 @@ namespace ClonZones
 
         private static void SetRendererForceRenderingOff(SpriteRenderer renderer, bool forceOff)
         {
-            if (renderer == null)
+            if (!UnityIcalls.Alive(renderer))
                 return;
 
             renderer.forceRenderingOff = forceOff;
@@ -1281,10 +1312,10 @@ namespace ClonZones
 
         private static void SetRendererEnabled(SpriteRenderer renderer, bool enabled, bool force = false)
         {
-            if (renderer == null)
+            if (!UnityIcalls.Alive(renderer))
                 return;
 
-            if (force || renderer.enabled != enabled)
+            if (force || UnityIcalls.Enabled(renderer) != enabled)
             {
                 renderer.enabled = enabled;
                 ClonZonesProfiler.RecordFretEnabledWrite();
@@ -1293,10 +1324,10 @@ namespace ClonZones
 
         private static void SetSortingOrder(SpriteRenderer renderer, int sortingOrder, bool force = false)
         {
-            if (renderer == null)
+            if (!UnityIcalls.Alive(renderer))
                 return;
 
-            if (force || renderer.sortingOrder != sortingOrder)
+            if (force || UnityIcalls.SortingOrder(renderer) != sortingOrder)
             {
                 renderer.sortingOrder = sortingOrder;
                 ClonZonesProfiler.RecordFretSortingWrite();
@@ -1307,7 +1338,7 @@ namespace ClonZones
         {
             // GH3-style static frets should not use v1.1's press/lift mask animation.
             var mask = visual?.BaseMask;
-            if (mask != null && (force || mask.enabled))
+            if (UnityIcalls.Alive(mask) && (force || UnityIcalls.Enabled(mask)))
             {
                 mask.enabled = false;
                 ClonZonesProfiler.RecordFretMaskWrite();
@@ -1592,7 +1623,7 @@ namespace ClonZones
         {
             return instance switch
             {
-                UnityEngine.Object obj when obj != null => obj.Pointer,
+                UnityEngine.Object obj when UnityIcalls.Alive(obj) => obj.Pointer,
                 Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase obj when obj != null => obj.Pointer,
                 _ => IntPtr.Zero
             };

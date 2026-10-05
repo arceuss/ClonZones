@@ -11,7 +11,7 @@ namespace ClonZones
         public const float TopY = 305f; // Playline - Height
         public const float TopWidth = 160f;
         public const float BottomWidth = 512f; // TopWidth * (1 + 2.2f)
-        public const float Fade = 30f; // highway_fade, alpha 0 at TopY, 1 at TopY + Fade
+        public const float Fade = 30f; // highway_fade, authored fade-band height
 
         // NotClon/src/gh3_tables.h, idx = (int)Height - 162 = 188.
         // HEIGHT_PERSP_FACT[188] = 1.000886f.
@@ -61,6 +61,17 @@ namespace ClonZones
             if (r >= RowCount)
                 r = RowCount - 1;
             return RowY[r] + (RowY[r + 1] - RowY[r]) * (row - r);
+        }
+
+        // the original table stops at the authored far edge. longer CH highways need a
+        // continuation, not a wider depth normalization. match its first slope and approach
+        // the same width-zero horizon; reversing the recurrence eventually crosses it.
+        public static float ExtendedYAtRow(float row)
+        {
+            if (row >= 0f) return YAtRow(row);
+            float gap = TopWidth * Height / (BottomWidth - TopWidth);
+            float slope = RowY[1] - RowY[0];
+            return TopY - gap + gap / (1f - row * slope / gap);
         }
 
         // Inverse of YAtRow for the bridge: binary search, then lerp in the span.
@@ -113,13 +124,24 @@ namespace ClonZones
             return FretbarS0 + (FretbarS1 - FretbarS0) * g;
         }
 
-        public static float AlphaAtY(float y)
+        // GH3's note-entry fade. Every GH3 highway vertex shader that takes m_startFade/m_endFade
+        // (animated gem sprites, plain sprites, the highway and WhammyBar in
+        // DATA/FXFILES/MaterialLibrary.bin.xen) computes smoothstep(saturate((y - end) / (start - end)))
+        // with end = the far edge and start = end + highway_fade. belowTop is y - end.
+        public static float EntryFade(float belowTop)
         {
-            if (y <= TopY)
-                return 0f;
-            if (y >= TopY + Fade)
-                return 1f;
-            return (y - TopY) / Fade;
+            float t = belowTop / Fade;
+            if (!(t > 0f)) return 0f;
+            if (t >= 1f) return 1f;
+            return t * t * (3f - 2f * t);
+        }
+
+        // Screen-uv y (0 at the bottom of the camera viewport, 1 at its top) of an authored row,
+        // given where the playline lands in viewport pixels. CH's track-fade shader compares its
+        // _FadeParams against this value per pixel.
+        public static float ScreenUvY(float y, float playlinePixelY, float pixelsPerUnit, float viewportY, float viewportHeight)
+        {
+            return (playlinePixelY + (Playline - y) * pixelsPerUnit - viewportY) / viewportHeight;
         }
     }
 }

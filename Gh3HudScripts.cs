@@ -18,7 +18,7 @@ namespace ClonZones
         private IEnumerator<Gh3Wait> HudMoveNoteScorebar(bool @in, float time)
         {
             Vector2 missOff = new(0f, 60f), easeOff = new(0f, 10f);
-            Vector2 countPos = Gh3HudLayout.CounterPos;
+            Vector2 countPos = _hudStyle == PresentationStyle.Wormod ? WormodHudLayout.CounterPos : Gh3HudLayout.CounterPos;
             Gh3HudElement c = _noteContainer;
             if (@in)
             {
@@ -41,6 +41,8 @@ namespace ClonZones
         // guitar_hud_2d.q:1047-1057: drop 10 px invisible (snap), then slide back over 0.1 s.
         private IEnumerator<Gh3Wait> HudFlipNoteStreakNum(int dial)
         {
+            // Source WORMod override is an empty script.
+            if (_hudStyle == PresentationStyle.Wormod) yield break;
             Gh3HudElement d = _digits[dial - 1];
             Vector2 basePos = d.Pos;
             d.Morph(Gh3Morph.Of().WithPos(basePos + new Vector2(0f, 10f)).WithAlpha(0f), _sched.NowMs);
@@ -59,7 +61,7 @@ namespace ClonZones
             // GH_SFX_Note_Streak_SinglePlayer would play here; no cue asset is shipped.
             int len = FormatInt(combo, _scoreBuffer);
             string text = new string(_scoreBuffer, 0, len) + " Note Streak!";
-            Gh3HudElement id = _scene.CreateText("note_streak_alert_1", container, Gh3HudAssets.Font("text_a6"), text, pos,
+            Gh3HudElement id = _scene.CreateText("note_streak_alert_1", container, _assets.Font("text_a6"), text, pos,
                 Gh3HudLayout.JustCenterTop, 50f, 0f, new Color32(223, 223, 223, 255), new Vector2(baseScale * 3f, baseScale * 3f));
             id.Shadow = true; id.ShadowOffset = new Vector2(2f, 2f); id.ShadowRgba = new Color32(0, 0, 0, 255);
             id.Morph(Gh3Morph.Of(0.2f, Gh3Motion.EaseIn).WithScale(baseScale).WithAlpha(1f), _sched.NowMs);
@@ -200,15 +202,18 @@ namespace ClonZones
         // guitar_hud_2d.q:339-376.
         private IEnumerator<Gh3Wait> RockMeterStarPowerOn()
         {
-            _sched.Spawn("rock_back_and_forth_star_meter", RockBackAndForthStarMeter());
+            // WORMod's rock_back_and_forth_star_meter script is an empty override.
+            if (_hudStyle != PresentationStyle.Wormod)
+                _sched.Spawn("rock_back_and_forth_star_meter", RockBackAndForthStarMeter());
             _sched.Spawn("pulsate_all_star_power_bulbs", PulsateAllStarPowerBulbs(), PulseScriptId);
             for (int i = 0; i < 6; i++)
             {
-                if (_tubeMorph[i]) _tube[i].Morph(Gh3Morph.Of(0.4f).WithPos(_tubeFinal[i]), _sched.NowMs);
+                bool morph = _hudStyle == PresentationStyle.Gh3 && _tubeMorph[i];
+                if (morph) _tube[i].Morph(Gh3Morph.Of(0.4f).WithPos(_tubeFinal[i]), _sched.NowMs);
                 _scene.SetTexture(_tubeFill[i], "HUD_rock_tube_glow_fill_b");
-                if (_tubeMorph[i]) _tubeFill[i].Morph(Gh3Morph.Of(0.4f).WithPos(_fillFinal[i]), _sched.NowMs);
+                if (morph) _tubeFill[i].Morph(Gh3Morph.Of(0.4f).WithPos(_fillFinal[i]), _sched.NowMs);
                 _scene.SetTexture(_tubeFull[i], "HUD_rock_tube_glow_full_b");
-                if (_tubeMorph[i])
+                if (morph)
                 {
                     _tubeFull[i].Morph(Gh3Morph.Of(0.4f).WithPos(_tubeFinal[i]), _sched.NowMs);
                     yield return Gh3Wait.Seconds(0.2f);
@@ -219,6 +224,8 @@ namespace ClonZones
         // guitar_hud_2d.q:448-485 (1P career/quickplay: rock container, up and down).
         private IEnumerator<Gh3Wait> RockBackAndForthStarMeter()
         {
+            // Source WORMod override is empty; callers also omit this spawn.
+            if (_hudStyle == PresentationStyle.Wormod) yield break;
             Gh3HudElement c = _rockContainer;
             Vector2 pos = c.Pos;
             const float t = 0.15f;
@@ -244,6 +251,12 @@ namespace ClonZones
         // guitar_hud_2d.q:384-405.
         private IEnumerator<Gh3Wait> PulsateStarPowerBulb(int bulb)
         {
+            if (_hudStyle == PresentationStyle.Wormod)
+            {
+                _tubeFill[bulb].SetAlpha(1f);
+                _tubeFull[bulb].SetAlpha(1f);
+                yield break;
+            }
             while (true)
             {
                 float alphaTime = RandomAlphaTime();
@@ -270,7 +283,7 @@ namespace ClonZones
             }
         }
 
-        // guitar_hud_2d.q:378-382 + native KillPulsateStarPowerBulbs (0x42C480): restore fill/full alphas, glow off.
+        // Native 0x42C480 restores old_alpha tags; the big glow keeps its existing fade timer.
         private void KillPulsateStarPowerBulbs()
         {
             _sched.KillId(PulseScriptId);
@@ -279,7 +292,7 @@ namespace ClonZones
                 _tubeFill[i].SetAlpha(_fillOldAlpha[i]);
                 _tubeFull[i].SetAlpha(_fullOldAlpha[i]);
             }
-            _rockGlow.SetAlpha(0f);
+            _rockGlow.SetTargetAlpha(0f);
         }
 
         // guitar_hud_2d.q:487-528.

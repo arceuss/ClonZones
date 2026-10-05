@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <RootNamespace>ClonZones.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../HudAssetPaths.cs" />
+    <Compile Include="../../PresentationSettings.cs" />
+    <!-- Star layer/image table, with the pure-value Unity stubs it needs. -->
+    <Compile Include="../../Gh3HudTypes.cs" />
+    <Compile Include="../../Gh3HudLayout.cs" />
+    <Compile Include="../../WormodHudLayout.cs" />
+    <Compile Include="../Gh3HudTests/UnityStubs.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>

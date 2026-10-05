@@ -21,6 +21,8 @@ namespace ClonZones
             public MaterialPropertyBlock Block;
             public Gh3HighwayMesh Mesh;
             public Sprite Sprite;
+            // rooted so the per-frame GetTexture lookup reuses one pooled wrapper.
+            public Texture BlockTexture;
             public bool WasOff, Hidden;
             public Matrix4x4 Matrix;
             public Vector2 Size;
@@ -45,14 +47,17 @@ namespace ClonZones
         {
             foreach (Slot slot in _slots)
             {
-                Sprite sprite = slot.Source.sprite;
-                if (sprite == null || !slot.Source.enabled)
+                IntPtr spritePointer = UnityIcalls.SpritePtr(slot.Source);
+                if (!UnityIcalls.AlivePtr(spritePointer) || !UnityIcalls.Enabled(slot.Source))
                 {
                     slot.Mesh?.Disable();
                     if (slot.Hidden) { slot.Source.forceRenderingOff = slot.WasOff; slot.Hidden = false; }
                     continue;
                 }
-                bool changed = projectionChanged || slot.Sprite != sprite;
+                // slot.Sprite != sprite with sprite alive: a different (or no) previous sprite.
+                bool spriteChanged = slot.Sprite is null || slot.Sprite.Pointer != spritePointer;
+                Sprite sprite = spriteChanged ? slot.Source.sprite : slot.Sprite;
+                bool changed = projectionChanged || spriteChanged;
                 if (slot.Mesh == null)
                 {
                     Material material = slot.Source.sharedMaterial;
@@ -62,7 +67,7 @@ namespace ClonZones
                     _log.Msg($"[ClonZones] Highway backing projection: owner={slot.Source.name}, drawMode={slot.Source.drawMode}, size={slot.Source.size}, sprite={sprite.rect}, ppu={sprite.pixelsPerUnit}, shader={material.shader.name}.");
                     changed = true;
                 }
-                if (slot.Sprite != sprite)
+                if (spriteChanged)
                 {
                     slot.Sprite = sprite;
                     var uv = sprite.uv;
@@ -75,15 +80,17 @@ namespace ClonZones
                     slot.PivotY = sprite.pivot.y / sprite.rect.height;
                     slot.Height = sprite.rect.height / sprite.pixelsPerUnit;
                 }
-                Matrix4x4 matrix = slot.Transform.worldToLocalMatrix;
-                Vector2 size = slot.Source.size;
-                Color color = slot.Source.color;
-                if (matrix != slot.Matrix || size != slot.Size || color != slot.Color) changed = true;
+                Matrix4x4 matrix = UnityIcalls.WorldToLocal(slot.Transform);
+                Vector2 size = UnityIcalls.SpriteRendererSize(slot.Source);
+                Color color = UnityIcalls.SpriteRendererColor(slot.Source);
+                if (!UnityIcalls.MatrixEquals(matrix, slot.Matrix) || !UnityIcalls.Vector2Equals(size, slot.Size)
+                    || !UnityIcalls.ColorEquals(color, slot.Color)) changed = true;
                 slot.Matrix = matrix; slot.Size = size; slot.Color = color;
                 if (changed) Draw(slot);
                 // CH still owns selected art, video frames, tint and UV scrolling.
                 slot.Source.GetPropertyBlock(slot.Block);
-                if (slot.Block.GetTexture(MainTexture) == null) slot.Block.SetTexture(MainTexture, sprite.texture);
+                slot.BlockTexture = slot.Block.GetTexture(MainTexture);
+                if (!UnityIcalls.Alive(slot.BlockTexture)) slot.Block.SetTexture(MainTexture, sprite.texture);
                 slot.Mesh.SetPropertyBlock(slot.Block);
                 if (!slot.Hidden) { slot.Source.forceRenderingOff = true; slot.Hidden = true; }
             }
@@ -93,21 +100,23 @@ namespace ClonZones
         {
             slot.Mesh.Begin();
             float near = (float)_notes.noteZPosCloseLimit, far = (float)_notes.noteZPosFarLimit;
-            Matrix4x4 track = _player.transform.localToWorldMatrix;
+            Matrix4x4 track = UnityIcalls.LocalToWorld(_player.transform);
             float height = slot.Source.drawMode == SpriteDrawMode.Sliced ? slot.Size.y : slot.Height;
             float halfWidth = _bridge.HalfWidth;
             for (int row = 0; row < 144; row++)
             {
                 float z0 = near + (far-near)*row/144f, z1 = near + (far-near)*(row+1)/144f;
-                float local0 = slot.Matrix.MultiplyPoint3x4(track.MultiplyPoint3x4(new Vector3(0f,0f,z0))).y;
-                float local1 = slot.Matrix.MultiplyPoint3x4(track.MultiplyPoint3x4(new Vector3(0f,0f,z1))).y;
+                Vector3 point0 = default, point1 = default;
+                point0.z = z0; point1.z = z1;
+                float local0 = UnityIcalls.MultiplyPoint3x4(slot.Matrix, UnityIcalls.MultiplyPoint3x4(track, point0)).y;
+                float local1 = UnityIcalls.MultiplyPoint3x4(slot.Matrix, UnityIcalls.MultiplyPoint3x4(track, point1)).y;
                 float v0 = slot.V0 + (slot.PivotY + local0/height)*(slot.V1-slot.V0);
                 float v1 = slot.V0 + (slot.PivotY + local1/height)*(slot.V1-slot.V0);
                 Color c0 = slot.Color, c1 = c0;
-                c0.a *= Gh3HighwayLayout.AlphaAtY(_bridge.DepthY(z0));
-                c1.a *= Gh3HighwayLayout.AlphaAtY(_bridge.DepthY(z1));
+                c0.a *= _bridge.AlphaAtY(_bridge.DepthY(z0));
+                c1.a *= _bridge.AlphaAtY(_bridge.DepthY(z1));
                 slot.Mesh.WorldQuad(_bridge.FieldPoint(-halfWidth,z0),_bridge.FieldPoint(halfWidth,z0),
-                    _bridge.FieldPoint(halfWidth,z1),_bridge.FieldPoint(-halfWidth,z1),v0,v1,c0,c1,slot.U0,slot.U1);
+                    _bridge.FieldPoint(halfWidth,z1),_bridge.FieldPoint(-halfWidth,z1),v0,v1,UnityIcalls.ToColor32(c0),UnityIcalls.ToColor32(c1),slot.U0,slot.U1);
             }
             slot.Mesh.Upload();
         }

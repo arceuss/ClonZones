@@ -15,7 +15,7 @@ namespace ClonZones
             var owner = ObjectPublicAbstractSealedInBoInObDoInSiDoInDoUnique.field_Private_Static_ObjectPublicTeNa1ByByUnique_0;
             if (owner == null) { _buffer = IntPtr.Zero; return; }
             Texture2D texture = owner.field_Private_Texture2D_0;
-            if (_owner == owner && _texture == texture) return;
+            if (_owner == owner && UnityIcalls.Same(_texture, texture)) return;
             _owner = owner;
             _texture = texture;
             var data = owner.field_Private_NativeArray_1_Byte_0;

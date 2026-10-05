@@ -18,9 +18,21 @@ namespace ClonZones
     {
         private static readonly Dictionary<IntPtr, Gh3HudController> Controllers = new();
         private static MelonLogger.Instance _log;
+        private static string _assetRoot;
+        private static long _assetGeneration;
         private static bool _active;
         private static bool _warned;
         private static bool _enabled = true;
+
+        /// <summary>
+        /// Supplies the selected theme root. A bank is still created per attach;
+        /// this method stores no decoded textures or regions.
+        /// </summary>
+        public static void Configure(string assetRoot, MelonLogger.Instance log)
+        {
+            _assetRoot = assetRoot;
+            _log = log;
+        }
 
         public static void Install(HarmonyLib.Harmony harmony, MelonLogger.Instance log)
         {
@@ -39,33 +51,63 @@ namespace ClonZones
         private static void Started(BeatRenderer __instance)
         {
             if (!_enabled || Controllers.ContainsKey(__instance.Pointer)) return;
-            if (!Gh3HudAssets.IsComplete)
-            {
-                if (!_warned) { _warned = true; _log.Warning($"[ClonZones] GH3 HUD assets incomplete ({Gh3HudAssets.MissingSummary}); vanilla HUD retained."); }
-                return;
-            }
             BasePlayer player = __instance.field_Private_BasePlayer_0;
             if (player == null || player.neckController == null || player.neckController.TryCast<GuitarNeckController>() == null) return;
             if (player.mainCamera == null || player.gameManager == null) return;
             if (player.gameManager.actualPlayerCount != 1)
             {
-                _log.Warning("[ClonZones] GH3 HUD is the sourced single-player career layout; vanilla HUD retained for multiplayer.");
+                _log?.Warning("[ClonZones] GH3 HUD is the sourced single-player career layout; vanilla HUD retained for multiplayer.");
                 return;
             }
             if (player.engine == null)
             {
-                _log.Warning("[ClonZones] GH3 HUD: player engine not created yet at BeatRenderer.Start; vanilla HUD retained.");
+                _log?.Warning("[ClonZones] player engine not created yet at BeatRenderer.Start; vanilla HUD retained.");
                 return;
             }
             Shader shader = Shader.Find("Sprites/Default");
-            if (shader == null) { _log.Warning("[ClonZones] Sprites/Default unavailable; vanilla HUD retained."); return; }
+            if (shader == null) { _log?.Warning("[ClonZones] Sprites/Default unavailable; vanilla HUD retained."); return; }
+
+            // Presentation is sampled once per attach. FlameStyle remains owned by
+            // the flame lane and is intentionally not consulted here.
+            PresentationSettings settings = PresentationSettings.Read(_assetRoot,
+                message => _log?.Warning("[ClonZones] " + message));
+            PresentationStyle style = settings.HudStyle;
+            IReadOnlyList<string> imageNames = style == PresentationStyle.Wormod
+                ? WormodHudLayout.ImageNames
+                : Gh3HudAssets.ImageNames;
+            Shader additiveShader = style == PresentationStyle.Wormod
+                ? Shader.Find("Legacy Shaders/Particles/Additive")
+                : null;
+            if (style == PresentationStyle.Wormod && additiveShader == null)
+            {
+                _log?.Warning("[ClonZones] WORMod HUD additive shader unavailable; vanilla HUD retained.");
+                return;
+            }
+
+            // Phase-B banks are fresh per attach. A missing optional image or
+            // shader never disables the Clone Hero HUD before the controller owns it.
+            Gh3HudAssets assets = new Gh3HudAssets(
+                style, _assetRoot, ++_assetGeneration,
+                imageNames, Gh3HudAssets.FontNames, _log);
+            if (!assets.IsComplete)
+            {
+                if (!_warned)
+                {
+                    _warned = true;
+                    _log?.Warning($"[ClonZones] {style} HUD assets incomplete ({assets.MissingSummary}); vanilla HUD retained.");
+                }
+                assets.Dispose();
+                return;
+            }
+
             try
             {
-                Controllers.Add(__instance.Pointer, new Gh3HudController(player, shader));
+                Controllers.Add(__instance.Pointer, new Gh3HudController(player, shader, assets, additiveShader));
             }
             catch (Exception error)
             {
-                _log.Error($"[ClonZones] GH3 HUD attach failed; vanilla HUD retained: {error}");
+                assets.Dispose();
+                _log?.Error($"[ClonZones] {style} HUD attach failed; vanilla HUD retained: {error}");
             }
         }
 
@@ -99,11 +141,13 @@ namespace ClonZones
         // ── instance ────────────────────────────────────────────────────────────
 
         private readonly BasePlayer _player;
+        private readonly PresentationStyle _hudStyle;
         private readonly Gh3HudStateBridge _bridge;
-        private readonly Gh3HudScene _scene = new(Gh3HudAssets.Region);
+        private readonly Gh3HudAssets _assets;
+        private readonly Gh3HudScene _scene;
         private readonly Gh3HudScheduler _sched = new();
-        private readonly Gh3HudMesh _mesh;
-        private readonly Gh3HudVisibility _visibility;
+        private Gh3HudMesh _mesh;
+        private Gh3HudVisibility _visibility;
         private readonly System.Random _random = new(0x4A3F);   // bulb pulse Random(@0.1 @*2 0.5): seeded per attach for reproducible captures
         private Gh3HudSnapshot _snap, _prev;
         private bool _disposed;
@@ -123,7 +167,7 @@ namespace ClonZones
         private readonly Gh3HudElement[] _nixieA = new Gh3HudElement[6], _nixieB = new Gh3HudElement[6]; // table {1,2,3,4,6,8}
         private static readonly int[] NixieTable = { 1, 2, 3, 4, 6, 8 };
         private readonly Gh3HudElement[] _unlit = new Gh3HudElement[5], _half = new Gh3HudElement[5], _full = new Gh3HudElement[5];
-        private Gh3HudElement _needle, _bgGreen, _bgYellow, _bgRed, _lightsGreen, _lightsYellow, _lightsRed;
+        private Gh3HudElement _needle, _bgGreen, _bgYellow, _bgRed, _bgNoFail, _lightsGreen, _lightsYellow, _lightsRed;
         private readonly Gh3HudElement[] _tube = new Gh3HudElement[6], _tubeFill = new Gh3HudElement[6], _tubeFull = new Gh3HudElement[6];
         private readonly Vector2[] _tubeFinal = new Vector2[6], _tubeInitial = new Vector2[6];
         private readonly Vector2[] _fillFinal = new Vector2[6], _fillInitial = new Vector2[6];
@@ -133,6 +177,7 @@ namespace ClonZones
         // Native updater caches (g_NoteStreak / g_scoreMultiplier / g_Score / g_StarPower / g_StarPower2_).
         private int _gNoteStreak = -1, _gScoreMultiplier = -1, _gScore = -1;
         private float _gStarPower = -1f, _gStarPowerPrev, _gHealth = -2f;
+        private bool _gNoFail;
         private bool _counterVisible;
         private bool _gMultiplierStarPower;
 
@@ -148,19 +193,72 @@ namespace ClonZones
         private const string PulseScriptId = "player_spawned_scriptid_p1";
         private const string StreakContainerId = "HUD_Note_Streak_Combo1";
 
-        private Gh3HudController(BasePlayer player, Shader shader)
+
+        private Gh3HudController(BasePlayer player, Shader shader, Gh3HudAssets assets, Shader additiveShader = null)
         {
             _player = player;
             _bridge = new Gh3HudStateBridge(player);
-            Camera camera = player.mainCamera;
-            _mesh = new Gh3HudMesh("clonzones_gh3_hud", Gh3HudAssets.Atlas, shader, camera, camera.gameObject.layer,
-                SortingLayer.NameToID("Default"), 30000, 4000, 256);
-            BuildScene();
-            _visibility = new Gh3HudVisibility(player, _log);
-            if (!_bridge.Read(ref _snap)) throw new InvalidOperationException("engine state unreadable at attach");
-            _prev = _snap;
-            _lastSongTime = _snap.SongTime;
-            _log.Msg($"[ClonZones] GH3 HUD attached: {_scene.Count} elements, viewport {camera.pixelRect.width}x{camera.pixelRect.height}, songTime={_snap.SongTime:F3}.");
+            _assets = assets ?? throw new ArgumentNullException(nameof(assets));
+            _hudStyle = _assets.Style;
+            _scene = new Gh3HudScene(_assets.Region);
+            try
+            {
+                Camera camera = player.mainCamera;
+                // GH3 draws frets and hit flames over the HUD containers, and the HUD over the field.
+                // CH sorts by layer value first, so sit on the highest layer below "Frets"
+                // (Sustains, 6): above Highway/HighwayOverlay/Beat Lines, below Frets/Notes/Flames.
+                int sortingLayer = SortingLayer.NameToID("Default");
+                int fretValue = int.MaxValue, highestValue = int.MinValue;
+                foreach (int layer in SortingLayer.GetSortingLayerIDsInternal())
+                    if (SortingLayer.IDToName(layer) == "Frets") fretValue = SortingLayer.GetLayerValueFromID(layer);
+                foreach (int layer in SortingLayer.GetSortingLayerIDsInternal())
+                {
+                    int value = SortingLayer.GetLayerValueFromID(layer);
+                    if (value >= fretValue || value <= highestValue) continue;
+                    highestValue = value;
+                    sortingLayer = layer;
+                }
+                _mesh = new Gh3HudMesh("clonzones_gh3_hud", _assets.Atlas, shader, camera, camera.gameObject.layer,
+                    sortingLayer, 30000, 4000, 256, additiveShader);
+                BuildScene();
+                _visibility = new Gh3HudVisibility(player, _log);
+                if (!_bridge.Read(ref _snap, _hudStyle == PresentationStyle.Wormod))
+                {
+                    string reason = _hudStyle == PresentationStyle.Wormod
+                        ? Gh3HudStateBridge.PresentationBindingError
+                        : null;
+                    throw new InvalidOperationException(reason ?? "engine state unreadable at attach");
+                }
+                _prev = _snap;
+                _lastSongTime = _snap.SongTime;
+                if (_hudStyle == PresentationStyle.Wormod)
+                {
+                    UpdateWormodRockMeter(_snap.Health);
+                    UpdateWormodStarMeter();
+                }
+                _log?.Msg($"[ClonZones] {_hudStyle} HUD attached: {_scene.Count} elements, viewport {camera.pixelRect.width}x{camera.pixelRect.height}, songTime={_snap.SongTime:F3}.");
+            }
+            catch
+            {
+                ReleaseOwnedResources();
+                throw;
+            }
+        }
+
+        private void ReleaseOwnedResources()
+        {
+            // The mesh must stop referencing the atlas before the bank destroys it.
+            if (_mesh != null)
+            {
+                _mesh.Dispose();
+                _mesh = null;
+            }
+            if (_visibility != null)
+            {
+                _visibility.Restore();
+                _visibility = null;
+            }
+            _assets?.Dispose();
         }
 
         // ── scene construction (guitar_hud.q:setup_hud + guitar_hud_2d.q:create_2d_hud_elements) ──
@@ -169,29 +267,45 @@ namespace ClonZones
         {
             Gh3HudElement hudWindow = _scene.CreateContainer("hud_window", null, Vector2.zero);
             _hudDestroyGroup = _scene.CreateContainer("hud_destroygroup_windowp1", hudWindow, Vector2.zero);
-            // hud_screen_elements[0]: pre-created Star Power Ready text; reset_hud_text leaves it at alpha 0.
-            _spReadyText = _scene.CreateText("star_power_ready_textp1", _hudDestroyGroup, Gh3HudAssets.Font("text_a6"), "Star Power Ready",
-                Gh3HudLayout.AlertBasePos, Gh3HudLayout.JustCenterTop, 80f, 0f, new Color32(210, 210, 210, 250), Vector2.one);
-            _spReadyText.Shadow = true; _spReadyText.ShadowOffset = new Vector2(2f, 2f); _spReadyText.ShadowRgba = new Color32(0, 0, 0, 255);
+            if (_hudStyle == PresentationStyle.Wormod)
+                BuildWormodNotifications(_hudDestroyGroup);
+            else
+            {
+                // hud_screen_elements[0]: pre-created Star Power Ready text; reset_hud_text leaves it at alpha 0.
+                _spReadyText = _scene.CreateText("star_power_ready_textp1", _hudDestroyGroup, _assets.Font("text_a6"), "Star Power Ready",
+                    Gh3HudLayout.AlertBasePos, Gh3HudLayout.JustCenterTop, 80f, 0f, new Color32(210, 210, 210, 250), Vector2.one);
+                _spReadyText.Shadow = true; _spReadyText.ShadowOffset = new Vector2(2f, 2f); _spReadyText.ShadowRgba = new Color32(0, 0, 0, 255);
+            }
 
-            _root2d = _scene.CreateContainer("HUD_2D_Containerp1", null, Vector2.zero, 0f, Gh3HudLayout.Scale);
+            bool wormod = _hudStyle == PresentationStyle.Wormod;
+            float rootScale = wormod ? WormodHudLayout.Scale : Gh3HudLayout.Scale;
+            float smallBulbScale = wormod ? WormodHudLayout.SmallBulbScale : Gh3HudLayout.SmallBulbScale;
+            float bigBulbScale = wormod ? WormodHudLayout.BigBulbScale : Gh3HudLayout.BigBulbScale;
+            Gh3HudLayout.Decl[] declarations = wormod ? WormodHudLayout.Career : Gh3HudLayout.Career;
+            _root2d = _scene.CreateContainer("HUD_2D_Containerp1", null, Vector2.zero, 0f, rootScale);
             var byId = new Dictionary<string, Gh3HudElement>(StringComparer.Ordinal);
-            foreach (Gh3HudLayout.Decl d in Gh3HudLayout.Career)
+            foreach (Gh3HudLayout.Decl d in declarations)
             {
                 Gh3HudElement parent = d.Parent != null ? byId[d.Parent] : _root2d;
                 if (d.Kind == Gh3HudLayout.Kind.Container)
                 {
-                    Vector2 pos = d.PosType != null ? Gh3HudLayout.PosTypeValue(d.PosType) : Vector2.zero;
-                    if (d.NoteStreakBar) pos += Gh3HudLayout.OffscreenNoteStreakBarOff;
+                    Vector2 pos = d.PosType != null
+                        ? (wormod ? WormodHudLayout.PosTypeValue(d.PosType) : Gh3HudLayout.PosTypeValue(d.PosType))
+                        : Vector2.zero;
+                    if (d.NoteStreakBar) pos += wormod ? WormodHudLayout.OffscreenNoteStreakBarOff : Gh3HudLayout.OffscreenNoteStreakBarOff;
                     pos += d.PosOff;
                     byId[d.Id] = _scene.CreateContainer(d.Id + PlayerText, parent, pos, d.Rot);
                     continue;
                 }
-                float bulbScale = d.SmallBulb ? Gh3HudLayout.SmallBulbScale : Gh3HudLayout.BigBulbScale;
+                float bulbScale = d.SmallBulb ? smallBulbScale : bigBulbScale;
                 Vector2? dims = d.Dims ?? (d.ElementDims.HasValue ? d.ElementDims.Value * bulbScale : null);
                 Vector2 spritePos = d.Bulb ? d.PosOff : (d.InitialPos ?? d.PosOff);
                 Gh3HudElement sprite = _scene.CreateSprite(d.Id + PlayerText, parent, d.Texture, spritePos, d.Just, d.Z, d.Alpha,
                     d.Rgba ?? new Color32(255, 255, 255, 255), d.Rot, dims);
+                sprite.Blend = d.Blend;
+                // Source `scale` is a post-create logical-dimension write, not a
+                // hierarchy scale. Keep the parent transform at the authored scale.
+                if (d.SpriteScale != 1f) sprite.Dims *= d.SpriteScale;
                 byId[d.Id] = sprite;
                 if (!d.Bulb) continue;
                 int bulb = int.Parse(d.Id.Substring(d.Id.Length - 1)) - 1;
@@ -201,12 +315,19 @@ namespace ClonZones
                 if (d.InitialPos.HasValue) sprite.SetPos(d.InitialPos.Value);
                 // tube/full children hang off the bulb container, not the tube sprite (builder: parent = element_parent).
                 Vector2 fillPos = d.PosOff + d.TubePosOff;
+                // no bulb scale here. the builder's dims (element_dims * bulb scale) get folded into a scale and the
+                // base reset to the texture size (CSpriteElement::SetProperties 0x4FB580), then UpdateSPMeter overwrites
+                // that scale with an absolute (0.8 * small_bulb_scale, 3f) (0x4230F0, SetScale relative=false). so every
+                // fill draws its 64x16 art at that scale. scaling here shrank small bulbs twice and left WORMod's six
+                // fills only touching instead of overlapping into one glow.
                 _tubeFill[bulb] = _scene.CreateSprite(d.Id + PlayerText + "tube", parent, d.TubeTexture, fillPos, Gh3HudLayout.JustCenterBottom,
-                    d.TubeZ, d.TubeAlpha, new Color32(255, 255, 255, 255), 0f, d.TubeDims * bulbScale);
+                    d.TubeZ, d.TubeAlpha, new Color32(255, 255, 255, 255), 0f, d.TubeDims);
+                _tubeFill[bulb].Blend = Gh3HudBlend.Alpha;
                 _fillFinal[bulb] = fillPos; _fillInitial[bulb] = (d.InitialPos ?? d.PosOff) + d.TubePosOff;
                 if (d.InitialPos.HasValue) _tubeFill[bulb].SetPos(_fillInitial[bulb]);
                 _tubeFull[bulb] = _scene.CreateSprite(d.Id + PlayerText + "full", parent, d.FullTexture, d.PosOff, d.Just,
                     d.FullZ, d.FullAlpha, new Color32(255, 255, 255, 255), 0f, d.ElementDims.Value * bulbScale);
+                _tubeFull[bulb].Blend = Gh3HudBlend.Alpha;
                 if (d.InitialPos.HasValue) _tubeFull[bulb].SetPos(d.InitialPos.Value);
                 _fillOldAlpha[bulb] = d.TubeAlpha; _fullOldAlpha[bulb] = d.FullAlpha;
             }
@@ -218,6 +339,7 @@ namespace ClonZones
             _rockGlow = byId["HUD2D_rock_glow"];
             _needle = byId["HUD2D_rock_needle"];
             _bgGreen = byId["HUD2D_rock_BG_green"]; _bgYellow = byId["HUD2D_rock_BG_yellow"]; _bgRed = byId["HUD2D_rock_BG_red"];
+            if (!wormod) _bgNoFail = byId["HUD2D_rock_BG_nofail"];
             _lightsGreen = byId["HUD2D_rock_lights_green"]; _lightsYellow = byId["HUD2D_rock_lights_yellow"]; _lightsRed = byId["HUD2D_rock_lights_red"];
             for (int i = 0; i < 5; i++)
             {
@@ -231,20 +353,27 @@ namespace ClonZones
                 byId.TryGetValue($"HUD2D_score_nixie_{m}a", out _nixieA[i]);
                 byId.TryGetValue($"HUD2D_score_nixie_{m}b", out _nixieB[i]);
             }
+            if (wormod) BindWormodElements(byId);
 
-            // Score text: displayText num_a9 (222,70) z 20 scale 1.1 just [right right], default (3,3) black shadow, font_spacing 5.
-            _scoreText = _scene.CreateText("HUD2D_Score_Textp1", _scoreContainer, Gh3HudAssets.Font("num_a9"), "",
-                Gh3HudLayout.ScoreTextPos, Gh3HudLayout.JustRightRight, Gh3HudLayout.ScoreTextZ, 1f, new Color32(255, 255, 255, 255),
-                new Vector2(Gh3HudLayout.ScoreTextScale, Gh3HudLayout.ScoreTextScale));
-            _scoreText.Shadow = true; _scoreText.ShadowOffset = Gh3HudLayout.DisplayTextShadowOffset; _scoreText.ShadowRgba = new Color32(0, 0, 0, 255);
-            _scoreText.FontSpacing = Gh3HudLayout.ScoreFontSpacing;
-            // Counter digits: num_a7 "0", dial i at (222,78) + i*(-37,0), z 25, center/center, noshadow, tag intial_pos.
+            Vector2 scoreTextPos = wormod ? WormodHudLayout.ScoreTextPos : Gh3HudLayout.ScoreTextPos;
+            float scoreTextScale = wormod ? WormodHudLayout.ScoreTextScale : Gh3HudLayout.ScoreTextScale;
+            _scoreText = _scene.CreateText("HUD2D_Score_Textp1", _scoreContainer, _assets.Font("num_a9"), "",
+                scoreTextPos, Gh3HudLayout.JustRightRight, wormod ? WormodHudLayout.ScoreTextZ : Gh3HudLayout.ScoreTextZ,
+                1f, new Color32(255, 255, 255, 255), new Vector2(scoreTextScale, scoreTextScale));
+            _scoreText.Shadow = true; _scoreText.ShadowOffset = wormod ? WormodHudLayout.DisplayTextShadowOffset : Gh3HudLayout.DisplayTextShadowOffset;
+            _scoreText.ShadowRgba = new Color32(0, 0, 0, 255);
+            _scoreText.FontSpacing = wormod ? WormodHudLayout.ScoreFontSpacing : Gh3HudLayout.ScoreFontSpacing;
+            Vector2 digitBase = wormod ? WormodHudLayout.CounterDigitBase : Gh3HudLayout.CounterDigitBase;
+            Vector2 digitStep = wormod ? WormodHudLayout.CounterDigitStep : Gh3HudLayout.CounterDigitStep;
             for (int i = 1; i <= 4; i++)
             {
-                Vector2 pos = Gh3HudLayout.CounterDigitBase + Gh3HudLayout.CounterDigitStep * i;
-                _digits[i - 1] = _scene.CreateText($"HUD2D_Note_Streak_Text_{i}p1", _noteContainer, Gh3HudAssets.Font("num_a7"), "0",
-                    pos, Gh3HudLayout.JustCenterCenter, Gh3HudLayout.CounterDigitZ, 1f,
-                    i == 1 ? Gh3HudLayout.CounterDigit1Rgba : Gh3HudLayout.CounterDigitRgba, Vector2.one);
+                Vector2 pos = digitBase + digitStep * i;
+                Color32 rgba = wormod
+                    ? WormodHudLayout.CounterDigitRgba
+                    : (i == 1 ? Gh3HudLayout.CounterDigit1Rgba : Gh3HudLayout.CounterDigitRgba);
+                _digits[i - 1] = _scene.CreateText($"HUD2D_Note_Streak_Text_{i}p1", _noteContainer, _assets.Font("num_a7"), "0",
+                    pos, Gh3HudLayout.JustCenterCenter, wormod ? WormodHudLayout.CounterDigitZ : Gh3HudLayout.CounterDigitZ,
+                    1f, rgba, Vector2.one);
                 _digitInitialPos[i - 1] = pos;
             }
         }
@@ -255,19 +384,30 @@ namespace ClonZones
         {
             if (_disposed) return;
             bool engineChanged = _bridge.EngineChanged;
-            if (!_bridge.Read(ref _snap)) return;
+            if (!_bridge.Read(ref _snap, _hudStyle == PresentationStyle.Wormod))
+            {
+                if (_hudStyle == PresentationStyle.Wormod)
+                    throw new InvalidOperationException(
+                        Gh3HudStateBridge.PresentationBindingError ?? "WORMod presentation state became unreadable");
+                return;
+            }
 
-            // A backwards clock or a score drop means CH reset/seeked the song: nothing pending survives that.
-            if (engineChanged || _snap.SongTime < _lastSongTime - 1e-6 || _snap.Score < _prev.Score)
+            // A backwards clock, a score drop, or a new practice section means
+            // CH reset/seeked the song: nothing pending survives that epoch.
+            bool practiceEpochChanged = _hudStyle == PresentationStyle.Wormod &&
+                (_snap.IsPractice != _prev.IsPractice ||
+                 (_snap.IsPractice && PracticeRangeChanged(_prev, _snap)));
+            if (engineChanged || practiceEpochChanged || _snap.SongTime < _lastSongTime - 1e-6 || _snap.Score < _prev.Score)
             {
                 ResetPresentation();
                 _changed = true;
             }
             _lastSongTime = _snap.SongTime;
+            ClonZonesBenchmark.RecordSongTime(_snap.SongTime);
 
             if (!_snap.Paused)
             {
-                double ms = Time.unscaledDeltaTime * 1000.0 + _clockRemainder;
+                double ms = UnityIcalls.UnscaledDeltaTime * 1000.0 + _clockRemainder;
                 int whole = (int)ms;
                 _clockRemainder = ms - whole;
                 // A script can exit with an async morph still running. The clock is not a queue clock.
@@ -276,11 +416,26 @@ namespace ClonZones
                 if (_scene.Tick(_sched.NowMs)) _changed = true;
                 RunEntrance();
                 RunNativeUpdater();
-                RunFcLabel();
+                if (_hudStyle == PresentationStyle.Wormod)
+                {
+                    // Active loop order from gem_scroller: native score/rock
+                    // update, then the custom WOR needle, then update_star_meter.
+                    UpdateWormodRockMeter(_snap.Health);
+                    UpdateWormodDullerEdges();
+                    UpdateWormodStarMeter();
+                }
+                if (_hudStyle == PresentationStyle.Gh3) RunFcLabel();
                 RunTransitions();
                 if (_sched.Count > 0) _changed = true;
                 _sched.Tick(0);
                 if (_scene.Tick(_sched.NowMs)) _changed = true;
+            }
+            else if (_hudStyle == PresentationStyle.Wormod)
+            {
+                // A reset caught while paused rebuilds the scene with the layout's full-width
+                // meter and nothing else would correct it before play resumes. Mirroring the
+                // native counter touches no clock, script or morph state.
+                UpdateWormodStarMeter();
             }
 
             if (_mesh.RefreshViewport()) _changed = true;
@@ -288,12 +443,18 @@ namespace ClonZones
             if (_changed || !_drawn)
             {
                 _changed = false;
+                ClonZonesBenchmark.Mark(BenchmarkEvent.HudRebuild);
                 _mesh.Begin();
+                long drawStart = ClonZonesProfiler.BeginScope(ProfileScope.HudDraw);
                 _scene.Draw(_mesh);
+                ClonZonesProfiler.EndScope(ProfileScope.HudDraw, drawStart);
+                long uploadStart = ClonZonesProfiler.BeginScope(ProfileScope.HudUpload);
                 _mesh.Upload();
+                ClonZonesProfiler.EndScope(ProfileScope.HudUpload, uploadStart);
             }
             Gh3HudDiagnostics.Snapshot(_snap, _mesh, _sched.Count, _bridge, _log);
             Gh3HudDiagnostics.RendererInventory(_log);
+            long visibilityStart = ClonZonesProfiler.BeginScope(ProfileScope.HudVisibility);
             if (!_drawn)
             {
                 _drawn = true;
@@ -303,11 +464,12 @@ namespace ClonZones
             {
                 // CH's right-click reset can replace leaves without changing the owning component.
                 // Re-discover on the click and release plus the following frame, including while paused.
-                if (UnityEngine.Input.GetMouseButtonDown(1) || UnityEngine.Input.GetMouseButtonUp(1))
+                if (UnityIcalls.MouseButtonDown(1) || UnityIcalls.MouseButtonUp(1))
                     _resetDiscoveryFrames = 2;
                 _visibility.Reassert(_resetDiscoveryFrames > 0);
                 if (_resetDiscoveryFrames > 0) _resetDiscoveryFrames--;
             }
+            ClonZonesProfiler.EndScope(ProfileScope.HudVisibility, visibilityStart);
             _prev = _snap;
         }
 
@@ -326,34 +488,38 @@ namespace ClonZones
             _flashRedGoing = false;
             _gNoteStreak = _gScoreMultiplier = _gScore = -1;
             _gMultiplierStarPower = false;
-            _gStarPower = -1f; _gStarPowerPrev = 0f; _gHealth = -2f;
+            _gStarPower = -1f; _gStarPowerPrev = 0f; _gHealth = -2f; _gNoFail = false;
             _entranceStarted = _entranceFinished = false;
-            _fcState = FcState.Waiting; _fcGhosted = false; _fcText = null; _fcGlow = null;
+            _fcState = FcState.Waiting; _fcText = null; _fcGlow = null;
             _synchronizeState = true;
             _prev = _snap;
         }
-
-        // ── entrance: guitar_intro.q hud_start_time -400 ms, hud_move_time 200 ms, then the bounce ──
+        // ── entrance: guitar_intro.q hud_start_time (-400/-1400 ms), hud_move_time 200 ms ──
 
         private void RunEntrance()
         {
             if (_entranceFinished) return;
             _changed = true;
-            const double start = -0.4, move = 0.2;
+            bool practice = _hudStyle == PresentationStyle.Wormod && _snap.IsPractice;
+            double songTime = practice && IsFinite(_snap.PracticeStartTime)
+                ? _snap.SongTime - _snap.PracticeStartTime
+                : _snap.SongTime;
+            double start = practice ? -1.4 : -0.4;
+            const double move = 0.2;
             if (!_entranceStarted)
             {
-                if (_snap.SongTime < start) return;
+                if (songTime < start) return;
                 _entranceStarted = true;
                 _entranceStartTime = start;
-                if (_snap.SongTime > start + move)
+                if (songTime > start + move)
                 {
-                    // Attached mid-song (practice seek): settle instantly, no intro bounce.
+                    // Attached mid-song: settle instantly, no intro bounce.
                     Morph2dHudElements(1f, Vector2.zero, 0f, 0f);
                     _entranceFinished = true;
                     return;
                 }
             }
-            float delta = (float)Math.Min(1.0, (_snap.SongTime - _entranceStartTime) / move);
+            float delta = (float)Math.Min(1.0, (songTime - _entranceStartTime) / move);
             Morph2dHudElements(delta, Vector2.zero, 0f, 0f);
             if (delta >= 1f)
             {
@@ -365,9 +531,14 @@ namespace ClonZones
         /// <summary>guitar_hud.q:morph_2d_hud_elements for 1P (rock_pos/score_pos, off_set_drop only in faceoff).</summary>
         private void Morph2dHudElements(float delta, Vector2 offSet, float time, float rot)
         {
-            Vector2 rock = (1f - delta) * Gh3HudLayout.OffscreenRockPos + delta * (Gh3HudLayout.RockPos - offSet);
-            Vector2 score = (1f - delta) * Gh3HudLayout.OffscreenScorePos + delta * (Gh3HudLayout.ScorePos + offSet);
-            _rockContainer.Morph(Gh3Morph.Of(time).WithPos(rock).WithRot(rot), _sched.NowMs);
+            Vector2 rock = (1f - delta) * (_hudStyle == PresentationStyle.Wormod ? WormodHudLayout.OffscreenRockPos : Gh3HudLayout.OffscreenRockPos) +
+                delta * ((_hudStyle == PresentationStyle.Wormod ? WormodHudLayout.RockPos : Gh3HudLayout.RockPos) - offSet);
+            Vector2 score = (1f - delta) * (_hudStyle == PresentationStyle.Wormod ? WormodHudLayout.OffscreenScorePos : Gh3HudLayout.OffscreenScorePos) +
+                delta * ((_hudStyle == PresentationStyle.Wormod ? WormodHudLayout.ScorePos : Gh3HudLayout.ScorePos) + offSet);
+            // active practice uses the native morph_2d_hud_elements exclusion:
+            // the rock stays offscreen while score/counter still enter.
+            if (!(_hudStyle == PresentationStyle.Wormod && _snap.IsPractice))
+                _rockContainer.Morph(Gh3Morph.Of(time).WithPos(rock).WithRot(rot), _sched.NowMs);
             _scoreContainer.Morph(Gh3Morph.Of(time).WithPos(score), _sched.NowMs);
         }
 
@@ -427,8 +598,11 @@ namespace ClonZones
                 if (_synchronizeState)
                 {
                     _counterVisible = streak >= Gh3HudRules.CounterShowStreak;
-                    _noteContainer.SetPos(Gh3HudLayout.CounterPos +
-                        (_counterVisible ? Vector2.zero : Gh3HudLayout.OffscreenNoteStreakBarOff));
+                    _noteContainer.SetPos(
+                        (_hudStyle == PresentationStyle.Wormod ? WormodHudLayout.CounterPos : Gh3HudLayout.CounterPos) +
+                        (_counterVisible
+                            ? Vector2.zero
+                            : (_hudStyle == PresentationStyle.Wormod ? WormodHudLayout.OffscreenNoteStreakBarOff : Gh3HudLayout.OffscreenNoteStreakBarOff)));
                 }
                 else if (streak < Gh3HudRules.CounterShowStreak)
                 {
@@ -445,8 +619,9 @@ namespace ClonZones
                     _sched.Kill("hud_move_note_scorebar");
                     _sched.Spawn("hud_move_note_scorebar", HudMoveNoteScorebar(true, 0.5f));
                 }
-                else
+                else if (_hudStyle != PresentationStyle.Wormod)
                 {
+                    // WORMod's hud_flip_note_streak_num is an empty source override.
                     _sched.Spawn("hud_flip_note_streak_num", HudFlipNoteStreakNum(Gh3HudRules.FlipDial(streak)));
                 }
 
@@ -468,11 +643,15 @@ namespace ClonZones
                 UpdateSpMeter(sp);
             }
 
-            // Rock meter on health change.
-            if (_snap.Health != _gHealth)
+            // Rock meter on health or effective no-fail mode change. The latter must
+            // repaint even when health is constant so a mode toggle cannot leave
+            // the previous presentation layered over the new one.
+            bool noFailChanged = _hudStyle == PresentationStyle.Gh3 && _snap.NoFail != _gNoFail;
+            if (_snap.Health != _gHealth || noFailChanged)
             {
                 _changed = true;
                 _gHealth = _snap.Health;
+                if (_hudStyle == PresentationStyle.Gh3) _gNoFail = _snap.NoFail;
                 UpdateRockMeter(_snap.Health);
             }
         }
@@ -544,6 +723,22 @@ namespace ClonZones
         /// </summary>
         private void UpdateRockMeter(float health)
         {
+            if (_hudStyle == PresentationStyle.Gh3)
+            {
+                if (_snap.NoFail)
+                {
+                    HudFlashRedBgKill();
+                    _bgNoFail.SetAlpha(1f);
+                    _bgGreen.SetAlpha(0f); _bgYellow.SetAlpha(0f); _bgRed.SetAlpha(0f);
+                    _needle.SetAlpha(0f);
+                    _lightsGreen.SetAlpha(0f); _lightsYellow.SetAlpha(0f); _lightsRed.SetAlpha(0f);
+                    return;
+                }
+                _bgNoFail.SetAlpha(0f);
+                _needle.SetAlpha(1f);
+                _bgRed.SetAlpha(1f);
+            }
+
             float a = Gh3HudRules.NeedleAngle(health);
             _needle.SetRot(a);
             Gh3HudRules.RockLayers(a, out float bgGreen, out float bgYellow, out float lGreen, out float lYellow, out float lRed, out bool flash);
@@ -604,9 +799,8 @@ namespace ClonZones
         {
             if (_disposed) return;
             _disposed = true;
-            _sched.Reset();
-            _mesh.Dispose();
-            _visibility.Restore();
+            try { _sched.Reset(); }
+            finally { ReleaseOwnedResources(); }
         }
     }
 }

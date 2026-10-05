@@ -7,7 +7,7 @@ namespace ClonZones
     /// <summary>Receives world-composed quads in authored 1280x720 space (y down), already z-ordered.</summary>
     internal interface IGh3HudQuadSink
     {
-        void Quad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, float u0, float v0, float u1, float v1, Color32 color);
+        void Quad(Vector2 a, Vector2 b, Vector2 c, Vector2 d, float u0, float v0, float u1, float v1, Color32 color, Gh3HudBlend blend = Gh3HudBlend.Alpha);
     }
 
     /// <summary>
@@ -87,13 +87,14 @@ namespace ClonZones
                     if (p == root) { e.Alive = false; break; }
             }
             for (int i = _elements.Count - 1; i >= 0; i--)
-                if (!_elements[i].Alive) { _byId.Remove(_elements[i].Id); _elements.RemoveAt(i); }
+                if (!_elements[i].Alive) { _byId.Remove(_elements[i].Id); _elements[i].SceneIndex = -1; _elements.RemoveAt(i); }
+            for (int i = 0; i < _elements.Count; i++) _elements[i].SceneIndex = i;
             _orderDirty = true;
         }
 
         public void Clear()
         {
-            foreach (var e in _elements) e.Alive = false;
+            foreach (var e in _elements) { e.Alive = false; e.SceneIndex = -1; }
             _elements.Clear(); _byId.Clear(); _nextOrder = 0; _orderDirty = true;
         }
 
@@ -101,6 +102,7 @@ namespace ClonZones
         {
             if (_byId.TryGetValue(id, out var old)) Destroy(old);
             var e = new Gh3HudElement(id, parent, _nextOrder++);
+            e.SceneIndex = _elements.Count;
             _elements.Add(e); _byId[id] = e; _orderDirty = true;
             if (_elements.Count > _world.Length)
             {
@@ -138,24 +140,15 @@ namespace ClonZones
                     w.Pos = e.Pos; w.Scale = e.Scale; w.Rot = e.Rot; w.Alpha = e.Alpha;
                     continue;
                 }
-                int pi = IndexOf(e.Parent);
-                World p = _world[pi];
+                World p = _world[e.Parent.SceneIndex];
                 float lx = e.Pos.x * p.Scale.x, ly = e.Pos.y * p.Scale.y;
-                float rad = p.Rot * Mathf.Deg2Rad;
-                float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
+                e.Parent.RotationTrig(p.Rot, out float cos, out float sin);
                 // 0x4FE8E0: wx = px + lx cos - ly sin, wy = py + lx sin + ly cos (clockwise in y-down space).
-                w.Pos = new Vector2(p.Pos.x + lx * cos - ly * sin, p.Pos.y + lx * sin + ly * cos);
-                w.Scale = new Vector2(p.Scale.x * e.Scale.x, p.Scale.y * e.Scale.y);
+                w.Pos = new Vector2 { x = p.Pos.x + lx * cos - ly * sin, y = p.Pos.y + lx * sin + ly * cos };
+                w.Scale = new Vector2 { x = p.Scale.x * e.Scale.x, y = p.Scale.y * e.Scale.y };
                 w.Rot = p.Rot + e.Rot;
                 w.Alpha = p.Alpha * e.Alpha;
             }
-        }
-
-        private int IndexOf(Gh3HudElement e)
-        {
-            // Parents sit before children; a backwards scan from the child is short.
-            for (int i = _elements.Count - 1; i >= 0; i--) if (_elements[i] == e) return i;
-            return -1;
         }
 
         private void SortDrawOrder()
@@ -186,7 +179,7 @@ namespace ClonZones
             {
                 Gh3HudElement e = _drawOrder[k];
                 if (e.IsContainer) continue;
-                World w = _world[IndexOf(e)];
+                World w = _world[e.SceneIndex];
                 if (w.Alpha < 1e-4f) continue;
                 if (e.Font != null) DrawText(e, w, sink);
                 else DrawSprite(e, w, sink);
@@ -197,17 +190,18 @@ namespace ClonZones
         {
             byte a = (byte)(int)(e.Rgba.a * w.Alpha);
             if (a == 0) return;
-            var color = new Color32(e.Rgba.r, e.Rgba.g, e.Rgba.b, a);
-            Vector2 anchor = new((e.Just.x + 1f) * 0.5f * e.Dims.x, (e.Just.y + 1f) * 0.5f * e.Dims.y);
-            float rad = w.Rot * Mathf.Deg2Rad;
-            float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
+            var color = new Color32 { r = e.Rgba.r, g = e.Rgba.g, b = e.Rgba.b, a = a };
+            Vector2 anchor = new() { x = (e.Just.x + 1f) * 0.5f * e.Dims.x, y = (e.Just.y + 1f) * 0.5f * e.Dims.y };
+            e.RotationTrig(w.Rot, out float cos, out float sin);
             Vector2 Corner(float x, float y)
             {
                 float lx = (x - anchor.x) * w.Scale.x, ly = (y - anchor.y) * w.Scale.y;
-                return new Vector2(w.Pos.x + lx * cos - ly * sin, w.Pos.y + lx * sin + ly * cos);
+                return new Vector2 { x = w.Pos.x + lx * cos - ly * sin, y = w.Pos.y + lx * sin + ly * cos };
             }
             Gh3HudRegion r = e.Region;
-            sink.Quad(Corner(0f, 0f), Corner(e.Dims.x, 0f), Corner(e.Dims.x, e.Dims.y), Corner(0f, e.Dims.y), r.U0, r.V1, r.U1, r.V0, color);
+            // pivot still measures against the full dims; only the drawn art shrinks.
+            float cw = e.Dims.x * r.CoverageX, ch = e.Dims.y * r.CoverageY;
+            sink.Quad(Corner(0f, 0f), Corner(cw, 0f), Corner(cw, ch), Corner(0f, ch), r.U0, r.V1, r.U1, r.V0, color, e.Blend);
         }
 
         /// <summary>
@@ -221,33 +215,36 @@ namespace ClonZones
             Gh3HudFont font = e.Font;
             Vector2 measured = font.Measure(e.Text, e.TextLength, e.FontSpacing);
             float sx = w.Scale.x, sy = w.Scale.y;
-            float jx = Mathf.Clamp01((e.Just.x + 1f) * 0.5f), jy = Mathf.Clamp01((e.Just.y + 1f) * 0.5f);
-            Vector2 origin = new(-jx * measured.x * sx, -jy * measured.y * sy);
-            Vector2 basePos = new((int)w.Pos.x, (int)w.Pos.y);
+            float jx = Clamp01((e.Just.x + 1f) * 0.5f), jy = Clamp01((e.Just.y + 1f) * 0.5f);
+            Vector2 origin = new() { x = -jx * measured.x * sx, y = -jy * measured.y * sy };
+            Vector2 basePos = new() { x = (int)w.Pos.x, y = (int)w.Pos.y };
             if (e.Shadow)
             {
                 byte sa = (byte)(int)(e.ShadowRgba.a * w.Alpha);
                 if (sa != 0)
                 {
-                    Vector2 shadowPos = new((int)(w.Pos.x + e.ShadowOffset.x), (int)(w.Pos.y + e.ShadowOffset.y));
-                    EmitGlyphs(e, font, shadowPos, origin, w, new Color32(e.ShadowRgba.r, e.ShadowRgba.g, e.ShadowRgba.b, sa), sink);
+                    Vector2 shadowPos = new() { x = (int)(w.Pos.x + e.ShadowOffset.x), y = (int)(w.Pos.y + e.ShadowOffset.y) };
+                    EmitGlyphs(e, font, shadowPos, origin, w, new Color32 { r = e.ShadowRgba.r, g = e.ShadowRgba.g, b = e.ShadowRgba.b, a = sa }, sink);
                 }
             }
             byte a = (byte)(int)(e.Rgba.a * w.Alpha);
-            if (a != 0) EmitGlyphs(e, font, basePos, origin, w, new Color32(e.Rgba.r, e.Rgba.g, e.Rgba.b, a), sink);
+            if (a != 0) EmitGlyphs(e, font, basePos, origin, w, new Color32 { r = e.Rgba.r, g = e.Rgba.g, b = e.Rgba.b, a = a }, sink);
         }
+
+        // Mathf.Clamp01's body (0x181E51660: below 0 -> 0, above 1 -> 1, NaN and -0 pass through).
+        // The interop version is a boxing runtime_invoke, and this runs on every HUD redraw.
+        private static float Clamp01(float value) => value < 0f ? 0f : value > 1f ? 1f : value;
 
         private static void EmitGlyphs(Gh3HudElement e, Gh3HudFont font, Vector2 pos, Vector2 origin, World w, Color32 color, IGh3HudQuadSink sink)
         {
             float sx = w.Scale.x, sy = w.Scale.y;
             float pre = e.FontSpacing < 0f ? font.DefaultPre : 0f;
             float post = e.FontSpacing < 0f ? font.DefaultPost : e.FontSpacing;
-            float rad = w.Rot * Mathf.Deg2Rad;
-            float cos = Mathf.Cos(rad), sin = Mathf.Sin(rad);
+            e.RotationTrig(w.Rot, out float cos, out float sin);
             Vector2 P(float x, float y)
             {
                 float lx = origin.x + x, ly = origin.y + y;
-                return new Vector2(pos.x + lx * cos - ly * sin, pos.y + lx * sin + ly * cos);
+                return new Vector2 { x = pos.x + lx * cos - ly * sin, y = pos.y + lx * sin + ly * cos };
             }
             float pen = 0f;
             for (int i = 0; i < e.TextLength; i++)
@@ -259,7 +256,7 @@ namespace ClonZones
                 float top = (font.LineHeight - (g.Height - g.YOff) - font.YOrigin) * sy + Gh3HudFont.BaselineOffset;
                 float qw = g.Width * sx, qh = g.Height * sy;
                 font.AtlasUv(g, out float u0, out float v0, out float u1, out float v1);
-                sink.Quad(P(left, top), P(left + qw, top), P(left + qw, top + qh), P(left, top + qh), u0, v1, u1, v0, color);
+                sink.Quad(P(left, top), P(left + qw, top), P(left + qw, top + qh), P(left, top + qh), u0, v1, u1, v0, color, e.Blend);
                 pen = left + qw + g.Extra * sx + post * sx;
             }
         }

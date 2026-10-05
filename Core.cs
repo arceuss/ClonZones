@@ -19,6 +19,8 @@ namespace ClonZones
                 return;
             }
             LoggerInstance.Msg($"[ClonZones] Asset root: {assetRoot}");
+            ClonZonesBenchmark.Initialize();
+            UnityIcalls.Initialize(LoggerInstance);
             ClonZonesProfiler.Initialize(assetRoot, LoggerInstance);
 
             long coreProfile = ClonZonesProfiler.BeginScope(ProfileScope.CoreInitialize);
@@ -63,7 +65,7 @@ namespace ClonZones
             Gh3HighwayRenderer.Install(HarmonyInstance, LoggerInstance);
             Gh3SustainBank.LoadAll(assetRoot, LoggerInstance);
             Gh3SustainPatch.Install(HarmonyInstance, LoggerInstance);
-            Gh3HudAssets.LoadAll(assetRoot, LoggerInstance);
+            Gh3HudController.Configure(assetRoot, LoggerInstance);
             Gh3HudBreakHook.Install(HarmonyInstance, LoggerInstance);
             Gh3HudController.Install(HarmonyInstance, LoggerInstance);
 
@@ -72,12 +74,17 @@ namespace ClonZones
             LoggerInstance.Msg("[ClonZones] Initialized.");
         }
 
+        public override void OnLateInitializeMelon()
+        {
+            // late init comes from MelonLoader's SM_Component.Start, so its component exists here.
+            HostAllocationFixes.Install(HarmonyInstance, LoggerInstance);
+        }
+
         public override void OnUpdate()
         {
             long profileStart = ClonZonesProfiler.BeginScope(ProfileScope.CoreUpdate);
             GuitarNoteHeadPatch.BeginFrame();
             GuitarFretPatch.TickAnimations();
-            GuitarFlamePatch.Tick();
             if (ClonZonesProfiler.Enabled)
                 ClonZonesProfiler.TickFrame();
             ClonZonesProfiler.EndScope(ProfileScope.CoreUpdate, profileStart);
@@ -91,9 +98,12 @@ namespace ClonZones
             profileStart = ClonZonesProfiler.BeginScope(ProfileScope.Gh3SustainUpdate);
             Gh3SustainPatch.Tick();
             ClonZonesProfiler.EndScope(ProfileScope.Gh3SustainUpdate, profileStart);
+            SustainFxPatch.Tick();
+            GuitarFlamePatch.Tick();
             profileStart = ClonZonesProfiler.BeginScope(ProfileScope.Gh3HudUpdate);
             Gh3HudController.Tick();
             ClonZonesProfiler.EndScope(ProfileScope.Gh3HudUpdate, profileStart);
+            ClonZonesBenchmark.EndUpdate();
         }
 
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
@@ -116,6 +126,8 @@ namespace ClonZones
         public override void OnSceneWasUnloaded(int buildIndex, string sceneName)
         {
             long profileStart = ClonZonesProfiler.BeginScope(ProfileScope.CoreScene);
+            if (string.Equals(sceneName, "Gameplay", System.StringComparison.OrdinalIgnoreCase))
+                ClonZonesBenchmark.Export("gameplay-unloaded");
             GuitarNoteHeadPatch.BeginSongTransition($"scene unloaded: {sceneName}");
             GuitarFretPatch.ClearRuntimeState();
             GuitarFlamePatch.SetActive(false);
@@ -138,12 +150,14 @@ namespace ClonZones
             Gh3HighwayRenderer.SetActive(isGameplay);
             Gh3SustainPatch.SetActive(isGameplay);
             Gh3HudController.SetActive(isGameplay);
+            ClonZonesBenchmark.SceneInitialized(sceneName);
             LoggerInstance.Msg($"[ClonZones] Scene initialized: '{sceneName}' (buildIndex={buildIndex}) → mode={(isGameplay ? "Gameplay" : "Inactive")}");
             ClonZonesProfiler.EndScope(ProfileScope.CoreScene, profileStart);
         }
 
         public override void OnApplicationQuit()
         {
+            ClonZonesBenchmark.Export("quit");
             GuitarNoteHeadPatch.SetMode(RenderPatchMode.ShuttingDown);
             GuitarFretPatch.ClearRuntimeState();
             GuitarFlamePatch.SetActive(false);
@@ -157,6 +171,7 @@ namespace ClonZones
 
         public override void OnDeinitializeMelon()
         {
+            ClonZonesBenchmark.Export("deinitialize");
             GuitarNoteHeadPatch.SetMode(RenderPatchMode.ShuttingDown);
             GuitarFretPatch.ClearRuntimeState();
             GuitarFlamePatch.SetActive(false);

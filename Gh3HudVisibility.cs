@@ -28,6 +28,7 @@ namespace ClonZones
         private readonly List<Owned> _owned = new(64);
         private readonly HashSet<IntPtr> _ownedPointers = new();
         private float _nextDiscoveryTime;
+        private int _phase = -1;
         private readonly MelonLogger.Instance _log;
         private readonly BasePlayer _player;
         private bool _hidden;
@@ -42,58 +43,129 @@ namespace ClonZones
             if (_hidden) return;
             _hidden = true;
             Collect();
-            _nextDiscoveryTime = Time.unscaledTime + 1f;
             _log.Msg($"[ClonZones] GH3 HUD hid {_owned.Count} Clone Hero HUD renderer leaves.");
         }
 
         /// <summary>
         /// Keep cached leaves hidden every LateUpdate, including while paused. Dynamic
-        /// glyph and multiplier arrays are checked directly; expensive hierarchy discovery
-        /// runs only on a reset request or the wall-clock fallback, not every 64 frames.
+        /// glyph and multiplier arrays are checked directly. A reset request rediscovers at
+        /// once; the wall-clock fallback for late online/ghost widgets runs one discovery
+        /// phase per LateUpdate, so no single frame pays for every scene-wide search.
         /// </summary>
         public void Reassert(bool rediscover = false)
         {
             if (!_hidden) return;
             for (int i = _owned.Count - 1; i >= 0; i--)
             {
+                // the stored pointer stays valid: _owned roots the wrapper and its gchandle.
+                if (!UnityIcalls.AlivePtr(_owned[i].Pointer)) { _ownedPointers.Remove(_owned[i].Pointer); _owned.RemoveAt(i); continue; }
                 Renderer r = _owned[i].Renderer;
-                if (r == null) { _ownedPointers.Remove(_owned[i].Pointer); _owned.RemoveAt(i); continue; }
                 if (!r.forceRenderingOff) r.forceRenderingOff = true;
             }
             ScoreManager score = _player.gameManager?.scoreManager;
-            if (score != null) { Font(score.scoreFont); Font(score.comboFont); }
+            if (UnityIcalls.Alive(score)) { Font(score.scoreFont); Font(score.comboFont); }
             Combo(_player.comboCounter);
-            if (rediscover || Time.unscaledTime >= _nextDiscoveryTime)
-            {
-                _nextDiscoveryTime = Time.unscaledTime + 1f;
-                Collect();
-            }
+            if (rediscover) Collect();
+            else if (_phase >= 0 || UnityIcalls.UnscaledTime >= _nextDiscoveryTime) CollectPhase();
         }
+
+        private const int Phases = 6;
 
         private void Collect()
         {
+            _phase = 0;
+            while (_phase >= 0) CollectPhase();
+        }
+
+        private void CollectPhase()
+        {
+            long start = ClonZonesBenchmark.Enabled ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            if (_phase < 0) _phase = 0;
+            switch (_phase)
+            {
+                case 0: CollectOwned(); break;
+                // Leaderboard mode instantiates extra multiplier/SP/health widgets beside the
+                // leaderboard. Same component types, other instances: sweep the loaded scene.
+                // Leaderboard/ghost widgets are created after their online fetch, i.e. after the first
+                // sweep, so the type sweep repeats on every rediscovery (1 s fallback, right click).
+                case 1:
+                {
+                    var all = Scene<ComboColor>();
+                    for (int i = 0; i < all.Length; i++)
+                    {
+                        var o = all[i].TryCast<ComboColor>();
+                        if (UnityIcalls.Alive(o) && o.Pointer != _player.comboCounter?.Pointer && Combo(o)) Note("ComboColor", o.transform);
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    var all = Scene<SPBar>();
+                    for (int i = 0; i < all.Length; i++)
+                    {
+                        var o = all[i].TryCast<SPBar>();
+                        if (UnityIcalls.Alive(o) && o.Pointer != _player.spBar?.Pointer && Sp(o)) Note("SPBar", o.transform);
+                    }
+                    break;
+                }
+                case 3:
+                {
+                    var all = Scene<HealthContainer>();
+                    for (int i = 0; i < all.Length; i++)
+                    {
+                        var o = all[i].TryCast<HealthContainer>();
+                        if (UnityIcalls.Alive(o) && o.Pointer != _player.healthContainer?.Pointer && Health(o)) Note("HealthContainer", o.transform);
+                    }
+                    break;
+                }
+                case 4:
+                {
+                    StarProgress own = _player.gameManager?.scoreManager?.starProgress;
+                    var all = Scene<StarProgress>();
+                    for (int i = 0; i < all.Length; i++)
+                    {
+                        var o = all[i].TryCast<StarProgress>();
+                        if (UnityIcalls.Alive(o) && o.Pointer != own?.Pointer && Stars(o)) Note("StarProgress", o.transform);
+                    }
+                    break;
+                }
+                default:
+                {
+                    var all = Scene<GhostHealthBar>();
+                    for (int i = 0; i < all.Length; i++)
+                    {
+                        var o = all[i].TryCast<GhostHealthBar>();
+                        if (UnityIcalls.Alive(o) && Ghost(o)) Note("GhostHealthBar", o.transform);
+                    }
+                    break;
+                }
+            }
+            if (++_phase >= Phases)
+            {
+                _phase = -1;
+                _nextDiscoveryTime = UnityIcalls.UnscaledTime + 1f;
+            }
+            if (start != 0)
+            {
+                ClonZonesBenchmark.RecordDiscovery(System.Diagnostics.Stopwatch.GetTimestamp() - start);
+                ClonZonesBenchmark.Mark(BenchmarkEvent.Discovery);
+            }
+        }
+
+        private void CollectOwned()
+        {
             ScoreManager score = _player.gameManager?.scoreManager;
-            if (score != null)
+            if (UnityIcalls.Alive(score))
             {
                 Font(score.scoreFont);
                 Font(score.comboFont);
-                if (score.comboTransform != null) Children(score.comboTransform.gameObject);
+                if (UnityIcalls.Alive(score.comboTransform)) Children(score.comboTransform.gameObject);
                 Stars(score.starProgress);
             }
             Combo(_player.comboCounter);
             Sp(_player.spBar);
             Health(_player.healthContainer);
             Housings(score, _player.comboCounter, _player.spBar, _player.healthContainer);
-            // Leaderboard mode instantiates extra multiplier/SP/health widgets beside the
-            // leaderboard. Same component types, other instances: sweep the loaded scene.
-            // Leaderboard/ghost widgets are created after their online fetch, i.e. after the first
-            // sweep, so the type sweep repeats on every rediscovery (1 s fallback, right click).
-            foreach (var o in Scene<ComboColor>()) if (o.Pointer != _player.comboCounter?.Pointer && Combo(o)) Note("ComboColor", o.transform);
-            foreach (var o in Scene<SPBar>()) if (o.Pointer != _player.spBar?.Pointer && Sp(o)) Note("SPBar", o.transform);
-            foreach (var o in Scene<HealthContainer>()) if (o.Pointer != _player.healthContainer?.Pointer && Health(o)) Note("HealthContainer", o.transform);
-            StarProgress own = _player.gameManager?.scoreManager?.starProgress;
-            foreach (var o in Scene<StarProgress>()) if (o.Pointer != own?.Pointer && Stars(o)) Note("StarProgress", o.transform);
-            foreach (var o in Scene<GhostHealthBar>()) if (Ghost(o)) Note("GhostHealthBar", o.transform);
         }
 
         private readonly HashSet<IntPtr> _swept = new();
@@ -108,18 +180,18 @@ namespace ClonZones
         /// </summary>
         private void Housings(ScoreManager score, ComboColor combo, SPBar sp, HealthContainer health)
         {
-            if (combo != null)
+            if (UnityIcalls.Alive(combo))
             {
-                if (combo.multiplierRenderer != null) Subtree(combo.multiplierRenderer.transform.parent);
+                if (UnityIcalls.Alive(combo.multiplierRenderer)) Subtree(combo.multiplierRenderer.transform.parent);
                 var ticks = combo.tickRenderers;
-                if (ticks != null && ticks.Length > 0 && ticks[0] != null) Subtree(ticks[0].transform.parent?.parent);
+                if (ticks != null && ticks.Length > 0 && UnityIcalls.Alive(ticks[0])) Subtree(ticks[0].transform.parent?.parent);
             }
-            if (sp?.starPowerBar != null) Subtree(sp.starPowerBar.transform.parent?.parent);
-            if (health?.redBar != null) Subtree(health.redBar.transform.parent);
-            if (score != null)
+            if (UnityIcalls.Alive(sp?.starPowerBar)) Subtree(sp.starPowerBar.transform.parent?.parent);
+            if (UnityIcalls.Alive(health?.redBar)) Subtree(health.redBar.transform.parent);
+            if (UnityIcalls.Alive(score))
             {
                 var digits = score.scoreFont?.Sprites;
-                if (digits != null && digits.Length > 0 && digits[0] != null)
+                if (digits != null && digits.Length > 0 && UnityIcalls.Alive(digits[0]))
                 {
                     Transform scoreHousing = digits[0].transform.parent;
                     Subtree(scoreHousing);
@@ -127,35 +199,35 @@ namespace ClonZones
                     Subtree(scoreHousing?.parent?.Find("Song Progress"));
                 }
                 var stars = score.starProgress;
-                if (stars?.progressBar != null) Subtree(stars.progressBar.parent);
+                if (UnityIcalls.Alive(stars?.progressBar)) Subtree(stars.progressBar.parent);
             }
         }
 
         /// <summary>Hide every renderer under a housing; never the player root, a scene root, or the HUD camera root.</summary>
         private void Subtree(Transform housing)
         {
-            if (housing == null || housing.parent == null) return;
+            if (!UnityIcalls.Alive(housing) || !UnityIcalls.Alive(housing.parent)) return;
             if (housing.Pointer == _player.transform.Pointer) return;
             Children(housing.gameObject);
         }
 
         private bool Stars(StarProgress stars)
         {
-            if (stars == null) return false;
+            if (!UnityIcalls.Alive(stars)) return false;
             bool fresh = _swept.Add(stars.Pointer);
-            if (stars.progressBar != null) Children(stars.progressBar.gameObject);
-            if (stars.progressBarEnd != null) Children(stars.progressBarEnd.gameObject);
+            if (UnityIcalls.Alive(stars.progressBar)) Children(stars.progressBar.gameObject);
+            if (UnityIcalls.Alive(stars.progressBarEnd)) Children(stars.progressBarEnd.gameObject);
             One(stars.starCount); One(stars.starCountBG);
-            if (stars.starParticles != null) One(stars.starParticles.GetComponent<Renderer>());
+            if (UnityIcalls.Alive(stars.starParticles)) One(stars.starParticles.GetComponent<Renderer>());
             return fresh;
         }
 
         /// <summary>Leaderboard-mode lifebar: bar, arrow and its two cached renderers.</summary>
         private bool Ghost(GhostHealthBar ghost)
         {
-            if (ghost == null) return false;
+            if (!UnityIcalls.Alive(ghost)) return false;
             bool fresh = _swept.Add(ghost.Pointer);
-            if (fresh && ghost.healthBar != null) Subtree(ghost.healthBar.transform.parent);
+            if (fresh && UnityIcalls.Alive(ghost.healthBar)) Subtree(ghost.healthBar.transform.parent);
             One(ghost.healthBar);
             One(ghost.field_Private_SpriteRenderer_0); One(ghost.field_Private_SpriteRenderer_1);
             Children(ghost.topArrow);
@@ -164,7 +236,7 @@ namespace ClonZones
 
         private bool Combo(ComboColor combo)
         {
-            if (combo == null) return false;
+            if (!UnityIcalls.Alive(combo)) return false;
             bool fresh = _swept.Add(combo.Pointer);
             One(combo.multiplierRenderer); One(combo.glowRenderer); One(combo.xRenderer);
             Array(combo.tickRenderers);
@@ -173,7 +245,7 @@ namespace ClonZones
 
         private bool Sp(SPBar sp)
         {
-            if (sp == null) return false;
+            if (!UnityIcalls.Alive(sp)) return false;
             bool fresh = _swept.Add(sp.Pointer);
             One(sp.starPowerBar);
             One(sp.field_Private_SpriteRenderer_0); One(sp.field_Private_SpriteRenderer_1);
@@ -183,37 +255,30 @@ namespace ClonZones
 
         private bool Health(HealthContainer health)
         {
-            if (health == null) return false;
+            if (!UnityIcalls.Alive(health)) return false;
             bool fresh = _swept.Add(health.Pointer);
             Children(health.redBar); Children(health.yellowBar); Children(health.greenBar);
-            if (health.arrowTransform != null) Children(health.arrowTransform.gameObject);
+            if (UnityIcalls.Alive(health.arrowTransform)) Children(health.arrowTransform.gameObject);
             One(health.arrowGlowRenderer); One(health.glowRenderer);
             return fresh;
         }
 
         /// <summary>Scene instances of a component type, inactive included (non-generic lookup: the generic one is stripped).</summary>
-        private static List<T> Scene<T>() where T : Component
+        private static Il2CppReferenceArray<UnityEngine.Object> Scene<T>() where T : Component
         {
-            var result = new List<T>();
-            var all = UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<T>(), true);
-            for (int i = 0; i < all.Length; i++)
-            {
-                var c = all[i].TryCast<T>();
-                if (c != null) result.Add(c);
-            }
-            return result;
+            return UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<T>(), true);
         }
 
         private void Note(string type, Transform t)
         {
             string path = t.name;
-            for (Transform p = t.parent; p != null; p = p.parent) path = p.name + "/" + path;
+            for (Transform p = t.parent; UnityIcalls.Alive(p); p = p.parent) path = p.name + "/" + path;
             _log.Msg($"[ClonZones] GH3 HUD also hid {type} at {path} ({_owned.Count} leaves owned).");
         }
 
         private void Font(SpriteFont font)
         {
-            if (font == null) return;
+            if (!UnityIcalls.Alive(font)) return;
             Array(font.Sprites);
         }
 
@@ -225,14 +290,14 @@ namespace ClonZones
 
         private void Children(GameObject go)
         {
-            if (go == null) return;
+            if (!UnityIcalls.Alive(go)) return;
             var components = go.GetComponentsInChildren(Il2CppInterop.Runtime.Il2CppType.Of<Renderer>(), true);
             for (int i = 0; i < components.Length; i++) One(components[i].TryCast<Renderer>());
         }
 
         private void One(Renderer renderer)
         {
-            if (renderer == null) return;
+            if (!UnityIcalls.Alive(renderer)) return;
             if (_ownedPointers.Add(renderer.Pointer)) _owned.Add(new Owned(renderer));
             // Owning it already does not mean CH has left the flag alone this frame.
             if (!renderer.forceRenderingOff) renderer.forceRenderingOff = true;
@@ -243,11 +308,12 @@ namespace ClonZones
         {
             foreach (Owned o in _owned)
             {
-                try { if (o.Renderer != null) o.Renderer.forceRenderingOff = o.WasOff; }
+                try { if (UnityIcalls.Alive(o.Renderer)) o.Renderer.forceRenderingOff = o.WasOff; }
                 catch (System.Exception) { /* object already destroyed by the scene teardown */ }
             }
             _owned.Clear(); _ownedPointers.Clear(); _swept.Clear();
             _hidden = false;
+            _phase = -1;
         }
     }
 }

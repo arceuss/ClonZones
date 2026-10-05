@@ -18,9 +18,18 @@ namespace ClonZones
         private static MelonLogger.Instance _log;
         private static bool _active;
         private static readonly Dictionary<IntPtr, NeckSustainCache> PatchedNecks = new();
+        // Color.white is a boxing invoke in the interop; RefreshNeckColors runs on every hit.
+        private static readonly Color White = Color.white;
         private static Il2CppReferenceArray<Sprite> _sustainFrames;
+        // Prewarm (6B): the frame cache is built from the neck's real spark template before the
+        // first hit; the first real patch still checks it saw the same template object.
+        private static readonly Dictionary<IntPtr, Il2Cpp.BeatRenderer> PendingPrewarm = new();
+        private static readonly List<IntPtr> PrewarmDone = new();
+        private static IntPtr _framesTemplate;
+        private static bool _framesUnverified;
         private static bool _warnedPrefixError;
         private static bool _warnedPostfixError;
+        private static bool _warnedPrewarmError;
 
         private sealed class NeckSustainCache
         {
@@ -45,6 +54,12 @@ namespace ClonZones
                 prefix: new HarmonyMethod(typeof(SustainFxPatch), nameof(PlayFretPrefix)),
                 postfix: new HarmonyMethod(typeof(SustainFxPatch), nameof(PlayFretPostfix)));
             log.Msg($"[ClonZones] Installed sustain FX PlayFret prefix/postfix: {playFret.Name}");
+
+            var start = AccessTools.Method(typeof(Il2Cpp.BeatRenderer), nameof(Il2Cpp.BeatRenderer.Start));
+            if (start != null)
+                harmony.Patch(start, postfix: new HarmonyMethod(typeof(SustainFxPatch), nameof(BeatStarted)));
+            else
+                log.Warning("[ClonZones] BeatRenderer.Start unavailable; sustain frames are built on the first hit.");
         }
 
         public static void SetActive(bool active)
@@ -56,12 +71,85 @@ namespace ClonZones
         {
             PatchedNecks.Clear();
             _sustainFrames = null;
+            PendingPrewarm.Clear();
+            _framesTemplate = IntPtr.Zero;
+            _framesUnverified = false;
+        }
+
+        private static void BeatStarted(Il2Cpp.BeatRenderer __instance)
+        {
+            if (__instance != null) PendingPrewarm[__instance.Pointer] = __instance;
+        }
+
+        /// <summary>LateUpdate: build the frame cache once a pending neck's real template exists.</summary>
+        public static void Tick()
+        {
+            if (PendingPrewarm.Count == 0 || !_active || !SustainFxBank.IsReady)
+                return;
+
+            PrewarmDone.Clear();
+            foreach (var pair in PendingPrewarm)
+            {
+                try
+                {
+                    if (_sustainFrames != null || TryPrewarm(pair.Value))
+                        PrewarmDone.Add(pair.Key);
+                }
+                catch (Exception ex)
+                {
+                    // leave the cache empty so the first hit builds it exactly as before.
+                    PrewarmDone.Add(pair.Key);
+                    if (!_warnedPrewarmError)
+                    {
+                        _warnedPrewarmError = true;
+                        _log?.Warning($"[ClonZones] sustain FX prewarm failed, frames will be built on the first hit: {ex.Message}");
+                    }
+                }
+            }
+            foreach (IntPtr key in PrewarmDone)
+                PendingPrewarm.Remove(key);
+        }
+
+        private static bool TryPrewarm(Il2Cpp.BeatRenderer beats)
+        {
+            if (beats == null)
+                return true;
+            var neck = beats.field_Private_BasePlayer_0?.neckController?.TryCast<Il2Cpp.GuitarNeckController>();
+            if (neck == null)
+                return beats.field_Private_BasePlayer_0?.neckController != null; // not a guitar neck: nothing to build
+            // same animator the first PatchNeck reaches: sparks first, then sparksOverlay.
+            Il2Cpp.Animator animator = FirstAnimator(neck, "sparks") ?? FirstAnimator(neck, "sparksOverlay");
+            if (animator == null)
+                return false;
+            Sprite template = SelectTemplate(animator, animator.GetComponent<SpriteRenderer>());
+            // no template yet: wait, never build against the fallback pivot/ppu.
+            if (template == null)
+                return false;
+            BuildFrames(template);
+            _framesUnverified = _sustainFrames != null;
+            return true;
+        }
+
+        private static Il2Cpp.Animator FirstAnimator(object neck, string memberName)
+        {
+            if (GetMember(neck, memberName) is not IEnumerable enumerable)
+                return null;
+            foreach (var item in enumerable)
+            {
+                var animator = item as Il2Cpp.Animator;
+                if (animator != null)
+                    return animator;
+            }
+            return null;
         }
 
         private static void PlayFretPrefix(object __instance)
         {
             if (!_active || !SustainFxBank.IsReady || __instance == null)
                 return;
+            // interactive use has started: the first patch builds or verifies the cache, so stop retrying.
+            if (PendingPrewarm.Count != 0)
+                PendingPrewarm.Clear();
 
             long profileStart = ClonZonesProfiler.BeginScope(ProfileScope.SustainPrefix);
             try
@@ -143,8 +231,8 @@ namespace ClonZones
             for (int i = 0; i < cache.Renderers.Length; i++)
             {
                 var renderer = cache.Renderers[i];
-                if (renderer != null)
-                    renderer.color = Color.white;
+                if (UnityIcalls.Alive(renderer))
+                    renderer.color = White;
             }
         }
 
@@ -199,20 +287,41 @@ namespace ClonZones
 
         private static Il2CppReferenceArray<Sprite> GetSustainFrames(Il2Cpp.Animator animator, SpriteRenderer renderer)
         {
-            if (_sustainFrames == null)
+            if (_sustainFrames == null || _framesUnverified)
             {
-                Sprite template = null;
-                var current = animator.Sprites;
-                if (current != null && current.Length > 0)
-                    template = current[0];
-                if (template == null && renderer != null)
-                    template = renderer.sprite;
-
-                var frames = SustainFxBank.CreateFramesLike(template) ?? SustainFxBank.Frames;
-                if (frames != null)
-                    _sustainFrames = new Il2CppReferenceArray<Sprite>(frames);
+                Sprite template = SelectTemplate(animator, renderer);
+                // the first real patch is where the frames used to be built. keep a prewarmed set
+                // only if this is the same template object, otherwise build from this one as before.
+                if (_sustainFrames == null || ObjectPointer(template) != _framesTemplate)
+                {
+                    // a rejected prewarm set was never handed to an animator; free it here.
+                    var rejected = _framesUnverified ? _sustainFrames : null;
+                    BuildFrames(template);
+                    if (rejected != null)
+                        for (int i = 0; i < rejected.Length; i++)
+                            UnityEngine.Object.Destroy(rejected[i]);
+                }
+                _framesUnverified = false;
             }
             return _sustainFrames;
+        }
+
+        private static Sprite SelectTemplate(Il2Cpp.Animator animator, SpriteRenderer renderer)
+        {
+            Sprite template = null;
+            var current = animator.Sprites;
+            if (current != null && current.Length > 0)
+                template = current[0];
+            if (template == null && renderer != null)
+                template = renderer.sprite;
+            return template;
+        }
+
+        private static void BuildFrames(Sprite template)
+        {
+            var frames = SustainFxBank.CreateFramesLike(template) ?? SustainFxBank.Frames;
+            _sustainFrames = frames != null ? new Il2CppReferenceArray<Sprite>(frames) : null;
+            _framesTemplate = frames != null ? ObjectPointer(template) : IntPtr.Zero;
         }
 
 
@@ -234,7 +343,7 @@ namespace ClonZones
         {
             return instance switch
             {
-                UnityEngine.Object obj when obj != null => obj.Pointer,
+                UnityEngine.Object obj when UnityIcalls.Alive(obj) => obj.Pointer,
                 Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase obj when obj != null => obj.Pointer,
                 _ => IntPtr.Zero
             };
